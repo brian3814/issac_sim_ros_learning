@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse AMR — ROS 2 × Isaac Sim 5.1</title>
+<style>
+/* ---------- tokens: light ---------- */
+:root {
+  color-scheme: light;
+  --paper:        #eaeef2;
+  --surface:      #ffffff;
+  --surface-2:    #f4f7fa;
+  --ink:          #0e1620;
+  --ink-2:        #34424f;
+  --muted:        #64737f;
+  --line:         #ccd6de;
+  --line-2:       #aab7c2;
+  --accent:       #a35a00;
+  --accent-2:     #7d4400;
+  --accent-wash:  #fbf0e0;
+  --signal:       #056b78;
+  --signal-wash:  #ddeff1;
+  --pass:         #14663f;
+  --fail:         #a2291d;
+  --shadow:       0 1px 2px rgba(14,22,32,.06), 0 8px 24px -12px rgba(14,22,32,.18);
+}
+/* ---------- tokens: dark ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper:       #0b1016;
+    --surface:     #131b23;
+    --surface-2:   #182129;
+    --ink:         #e3ecf3;
+    --ink-2:       #b7c5d1;
+    --muted:       #8395a3;
+    --line:        #26333f;
+    --line-2:      #3a4a58;
+    --accent:      #f2a33c;
+    --accent-2:    #ffc072;
+    --accent-wash: #2a1d0c;
+    --signal:      #4fd1c5;
+    --signal-wash: #0d2a2b;
+    --pass:        #5ddb9a;
+    --fail:        #ff8a7a;
+    --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+/* explicit overrides must beat the media query in both directions */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#0b1016; --surface:#131b23; --surface-2:#182129;
+  --ink:#e3ecf3; --ink-2:#b7c5d1; --muted:#8395a3;
+  --line:#26333f; --line-2:#3a4a58;
+  --accent:#f2a33c; --accent-2:#ffc072; --accent-wash:#2a1d0c;
+  --signal:#4fd1c5; --signal-wash:#0d2a2b;
+  --pass:#5ddb9a; --fail:#ff8a7a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --paper:#eaeef2; --surface:#ffffff; --surface-2:#f4f7fa;
+  --ink:#0e1620; --ink-2:#34424f; --muted:#64737f;
+  --line:#ccd6de; --line-2:#aab7c2;
+  --accent:#a35a00; --accent-2:#7d4400; --accent-wash:#fbf0e0;
+  --signal:#056b78; --signal-wash:#ddeff1;
+  --pass:#14663f; --fail:#a2291d;
+  --shadow:0 1px 2px rgba(14,22,32,.06), 0 8px 24px -12px rgba(14,22,32,.18);
+}
+
+/* ---------- base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, code, kbd, pre, .eyebrow, th, .tag, .metric-v, figcaption b {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--accent-2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------- shell ---------- */
+.shell { max-width: 1220px; margin: 0 auto; padding: 0 20px 96px; }
+@media (min-width: 1040px) {
+  .shell { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 56px; align-items: start; }
+  .masthead { grid-column: 1 / -1; }
+}
+
+/* ---------- masthead ---------- */
+.masthead { padding: 56px 0 28px; border-bottom: 1px solid var(--line); margin-bottom: 40px; position: relative; }
+.eyebrow {
+  font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 14px;
+}
+h1 {
+  font-size: clamp(28px, 4.4vw, 44px); line-height: 1.1; margin: 0 0 16px;
+  letter-spacing: -.022em; font-weight: 640; text-wrap: balance; max-width: 20ch;
+}
+.standfirst { font-size: clamp(16px, 1.6vw, 18.5px); color: var(--ink-2); max-width: 62ch; margin: 0 0 26px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.facts li {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; padding: 5px 11px; border: 1px solid var(--line-2);
+  border-radius: 2px; color: var(--ink-2); background: var(--surface);
+}
+.facts li b { color: var(--accent); font-weight: 600; }
+#themer {
+  position: absolute; top: 56px; right: 0;
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--line-2); border-radius: 2px;
+  font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: 9px 12px; cursor: pointer;
+}
+#themer:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- contents rail ---------- */
+.rail { display: none; }
+@media (min-width: 1040px) {
+  .rail { display: block; position: sticky; top: 32px; font-size: 13.5px; }
+  .rail p { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; font-family: ui-monospace, Menlo, monospace; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rail a { display: block; padding: 4px 0 4px 12px; color: var(--ink-2); text-decoration: none; border-left: 2px solid var(--line); }
+  .rail a:hover { color: var(--accent); border-left-color: var(--accent); }
+}
+
+/* ---------- sections ---------- */
+section { margin: 0 0 60px; scroll-margin-top: 24px; }
+h2 {
+  font-size: clamp(20px, 2.4vw, 25px); letter-spacing: -.014em; font-weight: 640;
+  margin: 0 0 6px; text-wrap: balance;
+}
+h2 .num {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+  color: var(--accent); font-weight: 600; margin-right: 12px; vertical-align: 3px;
+}
+.deck { color: var(--muted); margin: 0 0 26px; max-width: 66ch; font-size: 15px; }
+p, li { max-width: 68ch; }
+p { margin: 0 0 16px; }
+h3 { font-size: 16.5px; margin: 30px 0 10px; letter-spacing: -.008em; font-weight: 640; }
+
+/* ---------- figures ---------- */
+figure {
+  margin: 30px 0; padding: 22px 22px 16px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 3px; box-shadow: var(--shadow);
+}
+.fig-scroll { overflow-x: auto; }
+figure svg { display: block; width: 100%; min-width: 620px; height: auto; }
+figcaption {
+  margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--muted); max-width: 78ch;
+}
+figcaption b { color: var(--ink-2); font-weight: 600; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+
+/* ---------- code ---------- */
+pre {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px; padding: 15px 17px; overflow-x: auto;
+  font-size: 13px; line-height: 1.65; margin: 0 0 18px; color: var(--ink-2);
+}
+pre .c { color: var(--muted); }
+code { font-size: .89em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 2px; padding: 1px 5px; color: var(--ink-2); }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+
+/* ---------- tables ---------- */
+.tw { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 480px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th {
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; background: var(--surface-2); white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, Consolas, monospace; }
+td .t { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--signal); }
+td .n { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--ink-2); }
+.dir-in { color: var(--accent); font-weight: 600; }
+
+/* ---------- metrics ---------- */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px,1fr)); gap: 12px; margin: 0 0 24px; }
+.metric { background: var(--surface); border: 1px solid var(--line); border-left: 2px solid var(--pass); border-radius: 3px; padding: 13px 15px; }
+.metric-k { font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.metric-v { font-size: 21px; font-weight: 600; color: var(--ink); margin-top: 5px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.metric-n { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* ---------- callout ---------- */
+.note {
+  border: 1px solid var(--line); border-left: 2px solid var(--accent);
+  background: var(--accent-wash); border-radius: 3px;
+  padding: 14px 17px; margin: 0 0 22px; font-size: 14.5px; color: var(--ink-2);
+}
+.note p:last-child { margin-bottom: 0; }
+.note strong { color: var(--ink); }
+
+/* ---------- bug list ---------- */
+.bugs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.bugs > li { background: var(--surface); border: 1px solid var(--line); border-left: 2px solid var(--fail); border-radius: 3px; padding: 15px 18px; max-width: none; }
+.bugs h3 { margin: 0 0 6px; font-size: 15px; }
+.bugs p { margin: 0 0 8px; font-size: 14.5px; color: var(--ink-2); }
+.bugs p:last-child { margin-bottom: 0; }
+.fix { font-size: 13.5px; color: var(--pass); }
+.fix b { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--muted); font-size: 13px; }
+@media print { .rail, #themer { display: none; } body { background: #fff; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header class="masthead">
+  <button id="themer" type="button">Theme</button>
+  <p class="eyebrow">Learning project · NVIDIA Isaac Sim 5.1 · ROS 2 Humble</p>
+  <h1>Warehouse AMR: ROS&nbsp;2 × Isaac Sim</h1>
+  <p class="standfirst">An autonomous mobile robot patrols a warehouse aisle looking for pallets — the
+    ubiquitous 101 use case for industrial robot simulation. Build the scene, build the robot,
+    drive it over ROS&nbsp;2, and render a labelled training set from the same stage.</p>
+  <ul class="facts">
+    <li><b>0</b> packages installed</li>
+    <li><b>9</b> ROS 2 topics</li>
+    <li><b>99%</b> drive accuracy verified</li>
+    <li>Isaac Sim <b>5.1</b></li>
+    <li>ROS 2 <b>Humble</b> (bundled)</li>
+  </ul>
+</header>
+
+<nav class="rail" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#idea">The idea</a></li>
+    <li><a href="#arch">Architecture</a></li>
+    <li><a href="#flow">Control data flow</a></li>
+    <li><a href="#sensors">Sensors</a></li>
+    <li><a href="#frames">Frames</a></li>
+    <li><a href="#topics">Topics</a></li>
+    <li><a href="#run">Running it</a></li>
+    <li><a href="#verified">Verification</a></li>
+    <li><a href="#notes">Field notes</a></li>
+    <li><a href="#layout">Layout</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="idea">
+  <h2><span class="num">01</span>The idea</h2>
+  <p class="deck">One thing to understand before anything else.</p>
+  <p><strong>Isaac Sim does not “run ROS 2 code”.</strong> It evaluates a dataflow graph — OmniGraph —
+    that PhysX ticks every frame, and some nodes in that graph happen to be DDS publishers and
+    subscribers. There is no Python loop pumping messages.</p>
+  <p>That has a consequence worth the whole exercise: the code on your side of the wire is an
+    ordinary ROS 2 node. It cannot tell whether a simulator or a real AMR is on the other end.
+    Point it at real hardware publishing the same topics and it runs unchanged.</p>
+  <div class="note">
+    <p><strong>Nothing is installed on your machine.</strong> Isaac Sim vendors a complete minimal
+      ROS 2 — <code>rclpy</code>, the message packages, <code>tf2</code>, even the <code>ros2</code>
+      CLI — under <code>exts/isaacsim.ros2.bridge/humble/</code>. The scripts add that to their own
+      <code>sys.path</code>, so both sides of the wire use identical libraries and no version
+      mismatch is possible.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="arch">
+  <h2><span class="num">02</span>Architecture</h2>
+  <p class="deck">Two operating-system processes, one DDS boundary, four layers inside the simulator.</p>
+
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 900 476" role="img" aria-label="Two separate OS processes communicate over DDS: a plain Python process running ROS 2 client nodes, and the Isaac Sim process containing the ROS 2 bridge, the simulation engines and the USD scene. Only the topic names cross the boundary.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/>
+        </marker>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- LEFT PROCESS -->
+      <rect x="14" y="52" width="268" height="286" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55"/>
+      <text x="26" y="38" font-size="11.5" font-family="ui-monospace,Menlo,monospace" fill="currentColor" opacity=".62" letter-spacing="1.4">PROCESS 1 — python.bat</text>
+
+      <rect x="34" y="76" width="228" height="42" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1" opacity=".95"/>
+      <text x="148" y="102" font-size="13" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">patrol.py</text>
+
+      <rect x="34" y="126" width="228" height="42" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="148" y="152" font-size="13" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">teleop_key.py</text>
+
+      <rect x="34" y="176" width="228" height="42" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="148" y="202" font-size="13" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">topic_monitor.py</text>
+
+      <rect x="34" y="240" width="228" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".7"/>
+      <text x="148" y="264" font-size="12" text-anchor="middle" fill="currentColor" opacity=".8">bundled rclpy + ros2 CLI</text>
+      <text x="148" y="286" font-size="11" text-anchor="middle" fill="currentColor" opacity=".55">shipped inside Isaac Sim,</text>
+      <text x="148" y="302" font-size="11" text-anchor="middle" fill="currentColor" opacity=".55">added to sys.path at start-up</text>
+
+      <!-- DDS BOUNDARY -->
+      <line x1="330" y1="26" x2="330" y2="452" stroke="var(--accent)" stroke-width="1.3" stroke-dasharray="3 5" opacity=".85"/>
+      <text x="330" y="18" font-size="11" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.2">DDS</text>
+      <text x="330" y="466" font-size="10.5" text-anchor="middle" fill="var(--accent)" opacity=".85" font-family="ui-monospace,Menlo,monospace">FastDDS · domain from .env</text>
+
+      <!-- crossing arrows -->
+      <line x1="282" y1="140" x2="378" y2="140" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#a1)"/>
+      <text x="330" y="132" font-size="11.5" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">/cmd_vel</text>
+
+      <line x1="378" y1="196" x2="282" y2="196" stroke="var(--signal)" stroke-width="1.6" marker-end="url(#a2)"/>
+      <text x="330" y="188" font-size="11.5" text-anchor="middle" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/odom /scan</text>
+      <text x="330" y="212" font-size="11.5" text-anchor="middle" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/tf /rgb …</text>
+
+      <!-- RIGHT PROCESS -->
+      <rect x="378" y="52" width="508" height="386" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55"/>
+      <text x="390" y="38" font-size="11.5" font-family="ui-monospace,Menlo,monospace" fill="currentColor" opacity=".62" letter-spacing="1.4">PROCESS 2 — kit.exe (Isaac Sim)</text>
+
+      <rect x="400" y="76" width="464" height="70" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.3"/>
+      <text x="416" y="98" font-size="12.5" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace" letter-spacing=".6">ROS 2 BRIDGE</text>
+      <text x="416" y="120" font-size="12" fill="currentColor">OmniGraph nodes — publishers, subscribers,</text>
+      <text x="416" y="136" font-size="12" fill="currentColor">differential controller, odometry</text>
+
+      <line x1="632" y1="146" x2="632" y2="184" stroke="currentColor" stroke-width="1.3" marker-end="url(#a3)" color="var(--ink-2)"/>
+      <text x="644" y="170" font-size="11" fill="currentColor" opacity=".7">joint targets ↓ · state ↑</text>
+
+      <rect x="400" y="186" width="464" height="88" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="416" y="208" font-size="12.5" fill="currentColor" opacity=".7" font-family="ui-monospace,Menlo,monospace" letter-spacing=".6">SIMULATION</text>
+      <text x="416" y="232" font-size="12" fill="currentColor">PhysX — articulation, joints, contacts, 60 Hz</text>
+      <text x="416" y="254" font-size="12" fill="currentColor">RTX renderer — camera and lidar render products</text>
+
+      <line x1="632" y1="274" x2="632" y2="312" stroke="currentColor" stroke-width="1.3" marker-end="url(#a3)" color="var(--ink-2)"/>
+      <text x="644" y="298" font-size="11" fill="currentColor" opacity=".7">reads geometry · writes poses</text>
+
+      <rect x="400" y="314" width="464" height="88" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="416" y="336" font-size="12.5" fill="currentColor" opacity=".7" font-family="ui-monospace,Menlo,monospace" letter-spacing=".6">SCENE</text>
+      <text x="416" y="360" font-size="12" fill="currentColor">OpenUSD stage — geometry, physics schemas,</text>
+      <text x="416" y="382" font-size="12" fill="currentColor">semantic labels, materials</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 1 — System architecture</b>
+      Only topic names cross the DDS boundary. Everything to the right of the dashed line is
+      replaceable: swap the Isaac Sim process for a real AMR publishing the same topics and the
+      client scripts do not change by a line. That substitutability is the reason to work at the
+      ROS 2 layer at all.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section id="flow">
+  <h2><span class="num">03</span>Control data flow</h2>
+  <p class="deck">What actually happens between a <code>Twist</code> arriving and odometry going back out.</p>
+
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 940 430" role="img" aria-label="A Twist message on cmd_vel is received by ROS2SubscribeTwist, split into linear.x and angular.z by two BreakVector3 nodes, converted to left and right wheel speeds by the DifferentialController, written to PhysX by the ArticulationController, then read back by IsaacComputeOdometry and published as odom and tf. Every node is triggered by OnPlaybackTick.">
+      <defs>
+        <marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+        <marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/>
+        </marker>
+        <marker id="b3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- tick bar -->
+      <rect x="16" y="14" width="908" height="30" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1" opacity=".85"/>
+      <text x="30" y="34" font-size="12" fill="currentColor" font-family="ui-monospace,Menlo,monospace">OnPlaybackTick</text>
+      <text x="160" y="34" font-size="11.5" fill="currentColor" opacity=".62">fires every frame while the timeline is playing — every node below hangs off it</text>
+      <g stroke="currentColor" stroke-width="1" opacity=".38" stroke-dasharray="2 4">
+        <line x1="96" y1="44" x2="96" y2="86"/><line x1="300" y1="44" x2="300" y2="86"/>
+        <line x1="520" y1="44" x2="520" y2="86"/><line x1="720" y1="44" x2="720" y2="86"/>
+        <line x1="150" y1="44" x2="150" y2="250"/><line x1="600" y1="44" x2="600" y2="250"/>
+      </g>
+
+      <!-- inbound row -->
+      <text x="16" y="78" font-size="11" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.2">COMMAND IN</text>
+
+      <rect x="16" y="90" width="150" height="56" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.3"/>
+      <text x="91" y="112" font-size="12.5" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">/cmd_vel</text>
+      <text x="91" y="130" font-size="11" text-anchor="middle" fill="currentColor" opacity=".7">geometry_msgs/Twist</text>
+
+      <line x1="166" y1="118" x2="204" y2="118" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#b1)"/>
+
+      <rect x="206" y="90" width="164" height="56" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="288" y="114" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">ROS2Subscribe</text>
+      <text x="288" y="131" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Twist</text>
+
+      <line x1="370" y1="118" x2="408" y2="118" stroke="currentColor" stroke-width="1.4" marker-end="url(#b3)"/>
+      <text x="389" y="110" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">vec3</text>
+
+      <rect x="410" y="90" width="150" height="56" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="485" y="114" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">BreakVector3</text>
+      <text x="485" y="131" font-size="11" text-anchor="middle" fill="currentColor" opacity=".72">×2</text>
+
+      <line x1="560" y1="118" x2="598" y2="118" stroke="currentColor" stroke-width="1.4" marker-end="url(#b3)"/>
+      <text x="579" y="104" font-size="10" text-anchor="middle" fill="currentColor" opacity=".78">linear.x</text>
+      <text x="579" y="138" font-size="10" text-anchor="middle" fill="currentColor" opacity=".78">angular.z</text>
+
+      <rect x="600" y="90" width="164" height="56" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="682" y="114" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Differential</text>
+      <text x="682" y="131" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Controller</text>
+
+      <line x1="764" y1="118" x2="802" y2="118" stroke="currentColor" stroke-width="1.4" marker-end="url(#b3)"/>
+      <text x="783" y="104" font-size="10" text-anchor="middle" fill="currentColor" opacity=".78">[L,R]</text>
+      <text x="783" y="138" font-size="10" text-anchor="middle" fill="currentColor" opacity=".78">rad/s</text>
+
+      <rect x="804" y="90" width="120" height="56" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="864" y="114" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Articulation</text>
+      <text x="864" y="131" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Controller</text>
+
+      <!-- down into physx -->
+      <line x1="864" y1="146" x2="864" y2="186" stroke="currentColor" stroke-width="1.4" marker-end="url(#b3)"/>
+      <text x="852" y="170" text-anchor="end" font-size="10.5" fill="currentColor" opacity=".75">joint velocity targets</text>
+
+      <!-- PHYSX -->
+      <rect x="206" y="188" width="718" height="62" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.4"/>
+      <text x="565" y="214" font-size="13.5" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace" letter-spacing=".6">PhysX</text>
+      <text x="565" y="235" font-size="11.5" text-anchor="middle" fill="currentColor" opacity=".8">floating-base articulation · 2 revolute joints, velocity drives · 60 Hz</text>
+
+      <!-- back out -->
+      <line x1="288" y1="250" x2="288" y2="292" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#b2)"/>
+      <text x="300" y="276" font-size="10.5" fill="var(--signal)">measured pose + velocity</text>
+
+      <text x="16" y="282" font-size="11" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.2">STATE OUT</text>
+
+      <rect x="206" y="294" width="164" height="56" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.2"/>
+      <text x="288" y="318" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">IsaacCompute</text>
+      <text x="288" y="335" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Odometry</text>
+
+      <line x1="370" y1="310" x2="440" y2="310" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#b2)"/>
+      <line x1="370" y1="334" x2="440" y2="334" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#b2)"/>
+
+      <rect x="442" y="286" width="196" height="34" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.2"/>
+      <text x="540" y="308" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">ROS2PublishOdometry</text>
+
+      <rect x="442" y="324" width="196" height="34" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.2"/>
+      <text x="540" y="346" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">PublishRawTransform</text>
+
+      <line x1="638" y1="303" x2="700" y2="303" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#b2)"/>
+      <line x1="638" y1="341" x2="700" y2="341" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#b2)"/>
+
+      <rect x="702" y="286" width="120" height="34" rx="2" fill="none" stroke="var(--signal)" stroke-width="1.3"/>
+      <text x="762" y="308" font-size="12.5" text-anchor="middle" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/odom</text>
+      <rect x="702" y="324" width="120" height="34" rx="2" fill="none" stroke="var(--signal)" stroke-width="1.3"/>
+      <text x="762" y="346" font-size="12.5" text-anchor="middle" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/tf</text>
+
+      <text x="16" y="398" font-size="11.5" fill="currentColor" opacity=".62">Round trip measured end to end:</text>
+      <text x="16" y="416" font-size="11.5" fill="currentColor" opacity=".85" font-family="ui-monospace,Menlo,monospace">0.50 m/s commanded for 12.00 s → 5.931 m travelled (99% of 6.000 m expected), 0.044 m lateral drift</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 2 — The control loop</b>
+      The two <code>BreakVector3</code> nodes exist for a mundane reason worth knowing: a
+      <code>Twist</code> carries <code>linear</code> and <code>angular</code> as 3-vectors, while the
+      differential controller wants two scalars, so the graph taps <code>linear.x</code> and
+      <code>angular.z</code>. Note also that the controller and the articulation both hang off the
+      same tick — the <em>data</em> connection between them is what forces the correct evaluation
+      order, not the execution wiring.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section id="sensors">
+  <h2><span class="num">04</span>Sensors are cameras</h2>
+  <p class="deck">An RTX lidar is a camera with an unusual projection. The shared currency is the render product.</p>
+
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 900 356" role="img" aria-label="A USD camera and an RTX lidar each produce a render product. Render products are what both the ROS 2 bridge helper nodes and Replicator writers attach to, so the same rendering feeds live topics and a training dataset.">
+      <defs>
+        <marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/>
+        </marker>
+        <marker id="c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text x="16" y="26" font-size="11" fill="currentColor" opacity=".6" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.3">SOURCE</text>
+      <text x="266" y="26" font-size="11" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.3">RENDER PRODUCT</text>
+      <text x="530" y="26" font-size="11" fill="currentColor" opacity=".6" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.3">CONSUMER</text>
+      <text x="784" y="26" font-size="11" fill="currentColor" opacity=".6" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.3">OUTPUT</text>
+
+      <!-- camera -->
+      <rect x="16" y="48" width="188" height="52" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="110" y="70" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">UsdGeom.Camera</text>
+      <text x="110" y="88" font-size="11" text-anchor="middle" fill="currentColor" opacity=".68">on base_link, 640×480</text>
+
+      <!-- lidar -->
+      <rect x="16" y="164" width="188" height="52" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="110" y="186" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">OmniLidar (RTX)</text>
+      <text x="110" y="204" font-size="11" text-anchor="middle" fill="currentColor" opacity=".68">SICK_TIM781 profile</text>
+
+      <!-- sdg camera -->
+      <rect x="16" y="272" width="188" height="52" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="110" y="294" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">SDG camera</text>
+      <text x="110" y="312" font-size="11" text-anchor="middle" fill="currentColor" opacity=".68">randomised each frame</text>
+
+      <line x1="204" y1="74" x2="256" y2="74" stroke="currentColor" stroke-width="1.4" marker-end="url(#c2)"/>
+      <line x1="204" y1="190" x2="256" y2="190" stroke="currentColor" stroke-width="1.4" marker-end="url(#c2)"/>
+      <line x1="204" y1="298" x2="256" y2="298" stroke="currentColor" stroke-width="1.4" marker-end="url(#c2)"/>
+
+      <!-- render products -->
+      <rect x="258" y="48" width="196" height="52" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.4"/>
+      <text x="356" y="72" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">IsaacCreateRender</text>
+      <text x="356" y="88" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">Product (in graph)</text>
+
+      <rect x="258" y="164" width="196" height="52" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.4"/>
+      <text x="356" y="188" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">rep.create.</text>
+      <text x="356" y="204" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">render_product</text>
+
+      <rect x="258" y="272" width="196" height="52" rx="2" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.4"/>
+      <text x="356" y="303" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">render_product</text>
+
+      <line x1="454" y1="62" x2="522" y2="62" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="454" y1="90" x2="522" y2="112" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="454" y1="190" x2="522" y2="190" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="454" y1="298" x2="522" y2="298" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+
+      <!-- consumers -->
+      <rect x="524" y="42" width="212" height="40" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="630" y="66" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">ROS2CameraHelper</text>
+
+      <rect x="524" y="94" width="212" height="40" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="630" y="118" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">CameraInfoHelper</text>
+
+      <rect x="524" y="170" width="212" height="40" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="630" y="194" font-size="11.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">ROS2RtxLidarHelper</text>
+
+      <rect x="524" y="278" width="212" height="40" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.3"/>
+      <text x="630" y="302" font-size="11.5" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">Replicator BasicWriter</text>
+
+      <line x1="736" y1="62" x2="782" y2="62" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="736" y1="114" x2="782" y2="114" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="736" y1="190" x2="782" y2="190" stroke="var(--signal)" stroke-width="1.4" marker-end="url(#c1)"/>
+      <line x1="736" y1="298" x2="782" y2="298" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#c1)"/>
+
+      <text x="786" y="58" font-size="12" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/rgb</text>
+      <text x="786" y="76" font-size="12" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/depth</text>
+      <text x="786" y="118" font-size="12" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/camera_info</text>
+      <text x="786" y="194" font-size="12" fill="var(--signal)" font-family="ui-monospace,Menlo,monospace">/scan</text>
+      <text x="786" y="290" font-size="11.5" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">rgb + boxes</text>
+      <text x="786" y="308" font-size="11.5" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">masks + depth</text>
+
+      <line x1="16" y1="240" x2="884" y2="240" stroke="currentColor" stroke-width="1" opacity=".22" stroke-dasharray="3 4"/>
+      <text x="16" y="258" font-size="11" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace" letter-spacing="1.2">OFFLINE — separate process, no ROS 2</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 3 — One abstraction, two pipelines</b>
+      A render product is a handle to “one thing being rendered, at one resolution”. Because both
+      the ROS 2 helper nodes and Replicator’s writers attach to render products, live topics and
+      dataset generation are the same machinery pointed at different consumers. The dashed rule
+      marks a real process boundary: dataset generation is render-bound and offline, the bridge is
+      physics-bound and real-time, so they never share a process.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section id="frames">
+  <h2><span class="num">05</span>Frames</h2>
+  <p class="deck">Two different publishers build the TF tree, and they meet at <code>base_link</code>.</p>
+
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 780 232" role="img" aria-label="The TF tree: odom connects to base_link via ROS2PublishRawTransformTree, and base_link connects to left wheel, right wheel, front camera and front lidar via ROS2PublishTransformTree.">
+      <defs>
+        <marker id="d1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect x="14" y="92" width="118" height="42" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.3"/>
+      <text x="73" y="118" font-size="13" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">odom</text>
+
+      <line x1="132" y1="113" x2="222" y2="113" stroke="currentColor" stroke-width="1.4" marker-end="url(#d1)"/>
+      <text x="177" y="104" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72">RawTransformTree</text>
+      <text x="177" y="130" font-size="10" text-anchor="middle" fill="currentColor" opacity=".55">from ComputeOdometry</text>
+
+      <rect x="224" y="92" width="128" height="42" rx="2" fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.3"/>
+      <text x="288" y="118" font-size="13" text-anchor="middle" fill="var(--accent)" font-family="ui-monospace,Menlo,monospace">base_link</text>
+
+      <text x="420" y="26" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72">ROS2PublishTransformTree · parentPrim = base_link</text>
+
+      <g stroke="currentColor" stroke-width="1.3" fill="none" opacity=".8">
+        <path d="M352 113 L392 113 L392 48 L436 48" marker-end="url(#d1)"/>
+        <path d="M352 113 L392 113 L392 92 L436 92" marker-end="url(#d1)"/>
+        <path d="M352 113 L392 113 L392 136 L436 136" marker-end="url(#d1)"/>
+        <path d="M352 113 L392 113 L392 180 L436 180" marker-end="url(#d1)"/>
+      </g>
+
+      <rect x="438" y="30" width="180" height="36" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="528" y="53" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">left_wheel</text>
+
+      <rect x="438" y="74" width="180" height="36" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="528" y="97" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">right_wheel</text>
+
+      <rect x="438" y="118" width="180" height="36" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="528" y="141" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">front_camera</text>
+
+      <rect x="438" y="162" width="180" height="36" rx="2" fill="var(--surface-2)" stroke="currentColor" stroke-width="1.1"/>
+      <text x="528" y="185" font-size="12" text-anchor="middle" fill="currentColor" font-family="ui-monospace,Menlo,monospace">front_lidar</text>
+
+      <text x="632" y="53" font-size="10.5" fill="currentColor" opacity=".55">joint state</text>
+      <text x="632" y="97" font-size="10.5" fill="currentColor" opacity=".55">joint state</text>
+      <text x="632" y="141" font-size="10.5" fill="currentColor" opacity=".55">/rgb frame</text>
+      <text x="632" y="185" font-size="10.5" fill="var(--signal)">/scan frame</text>
+
+      <text x="14" y="222" font-size="11" fill="currentColor" opacity=".6">Frame ids come from prim names — rename a prim and the frame id moves with it.</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 4 — TF tree, as published</b>
+      Verified live by subscribing to <code>/tf</code> and collecting the parent/child pairs.
+      <code>odom → base_link</code> is what a navigation stack expects the <em>simulator</em> to
+      provide; the rest is the robot’s own rigid structure.</figcaption>
+  </figure>
+
+  <div class="note">
+    <p><strong>One known nuance.</strong> ROS convention (REP-103) expects camera <em>optical</em>
+      frames with +Z forward and +Y down, while the USD camera here is +X forward, +Z up. If you
+      feed this into a perception stack that assumes optical frames, publish a static transform
+      between <code>front_camera</code> and a <code>front_camera_optical</code> frame — rotating the
+      camera prim instead would also rotate the rendered image.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="topics">
+  <h2><span class="num">06</span>Topics</h2>
+  <p class="deck">Nine topics, one of them inbound. Set <code>ROS_NAMESPACE</code> in <code>.env</code> to prefix them all.</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th>Topic</th><th>Message type</th><th>Dir</th><th class="num">Rate</th><th>Graph node</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><span class="t">/cmd_vel</span></td><td><span class="n">geometry_msgs/Twist</span></td><td class="dir-in">in</td><td class="num">—</td><td><span class="n">ROS2SubscribeTwist</span></td></tr>
+      <tr><td><span class="t">/clock</span></td><td><span class="n">rosgraph_msgs/Clock</span></td><td>out</td><td class="num">52 Hz</td><td><span class="n">ROS2PublishClock</span></td></tr>
+      <tr><td><span class="t">/odom</span></td><td><span class="n">nav_msgs/Odometry</span></td><td>out</td><td class="num">52 Hz</td><td><span class="n">ROS2PublishOdometry</span></td></tr>
+      <tr><td><span class="t">/joint_states</span></td><td><span class="n">sensor_msgs/JointState</span></td><td>out</td><td class="num">52 Hz</td><td><span class="n">ROS2PublishJointState</span></td></tr>
+      <tr><td><span class="t">/tf</span></td><td><span class="n">tf2_msgs/TFMessage</span></td><td>out</td><td class="num">52 Hz</td><td><span class="n">PublishRawTransformTree + PublishTransformTree</span></td></tr>
+      <tr><td><span class="t">/scan</span></td><td><span class="n">sensor_msgs/LaserScan</span></td><td>out</td><td class="num">26 Hz</td><td><span class="n">ROS2RtxLidarHelper</span></td></tr>
+      <tr><td><span class="t">/rgb</span></td><td><span class="n">sensor_msgs/Image</span></td><td>out</td><td class="num">26 Hz</td><td><span class="n">ROS2CameraHelper</span></td></tr>
+      <tr><td><span class="t">/depth</span></td><td><span class="n">sensor_msgs/Image</span></td><td>out</td><td class="num">26 Hz</td><td><span class="n">ROS2CameraHelper</span></td></tr>
+      <tr><td><span class="t">/camera_info</span></td><td><span class="n">sensor_msgs/CameraInfo</span></td><td>out</td><td class="num">26 Hz</td><td><span class="n">ROS2CameraInfoHelper</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:14px;color:var(--muted)">Rates measured over an 8 s sample against a running
+    simulation. Sensors publish at half the others because
+    <code>CAMERA_PUBLISH_EVERY_N_FRAMES=2</code>. Publishers exist <em>only while the timeline is
+    playing</em> — a stopped simulation advertises nothing at all, which is the single most common
+    “where did my topics go?” cause.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="run">
+  <h2><span class="num">07</span>Running it</h2>
+  <p class="deck">Use the <code>.cmd</code> launchers — Windows blocks <code>.ps1</code> by default.</p>
+
+<pre><code><span class="c">:: once</span>
+copy .env.example .env
+
+<span class="c">:: verify the whole pipeline, then exit non-zero on failure</span>
+run\sim.cmd --self-test
+
+<span class="c">:: lesson 1-2 — USD, physics, what a robot actually is</span>
+run\scene.cmd --spin --save
+
+<span class="c">:: lesson 3-4 — the bridge (terminal 1, then terminal 2)</span>
+run\sim.cmd
+run\client.cmd monitor
+run\client.cmd teleop
+run\client.cmd patrol
+run\client.cmd ros2 topic hz /scan
+
+<span class="c">:: lesson 5 — labelled dataset</span>
+run\dataset.cmd --frames 40</code></pre>
+
+  <h3>In the Isaac Sim editor</h3>
+  <p><code>run\sim.cmd</code> without <code>--headless</code> already opens the full editor. To build
+    the scene from Isaac Sim’s own Script Editor instead:</p>
+<pre><code>import sys
+sys.path.insert(0, r"D:\code\omniverse_learn\ros2_integration")
+from warehouse_amr import gui
+gui.build()          <span class="c"># then press Play</span></code></pre>
+  <p>That needs a separate entry point for two reasons: inside the GUI, Kit is already running so a
+    second <code>SimulationApp</code> is not allowed, and the GUI owns the update loop so anything
+    needing a frame to settle must <code>await</code> the next update rather than call
+    <code>simulation_app.update()</code>. Hence <code>gui.build()</code> is asynchronous and returns
+    immediately.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="verified">
+  <h2><span class="num">08</span>Verification</h2>
+  <p class="deck">Measured, not assumed. <code>--self-test</code> reproduces all of it.</p>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-k">Drive accuracy</div><div class="metric-v">99%</div><div class="metric-n">5.931 m of 6.000 m</div></div>
+    <div class="metric"><div class="metric-k">Lateral drift</div><div class="metric-v">0.044 m</div><div class="metric-n">over 12 s straight</div></div>
+    <div class="metric"><div class="metric-k">Lidar returns</div><div class="metric-v">604</div><div class="metric-n">of 811 beams finite</div></div>
+    <div class="metric"><div class="metric-k">Topics live</div><div class="metric-v">9 / 9</div><div class="metric-n">none missing</div></div>
+    <div class="metric"><div class="metric-k">GUI build</div><div class="metric-v">7</div><div class="metric-n">frames to assemble</div></div>
+    <div class="metric"><div class="metric-k">GUI drive</div><div class="metric-v">4.940 m</div><div class="metric-n">physics under timeline</div></div>
+  </div>
+
+  <p>The drive figure is the one that matters. Topics being advertised only proves the graph was
+    built; it says nothing about whether a <code>Twist</code> reaches PhysX. Phase 2 of the
+    self-test publishes <code>/cmd_vel</code>, measures elapsed <em>simulation</em> time, and
+    compares the odometry against the distance that command should have produced.</p>
+
+  <div class="note">
+    <p><strong>Why simulation time, not step count.</strong> One
+      <code>step(render=True)</code> advances physics as many times as it needs to hit
+      <code>rendering_dt</code> — twice, at 60 Hz physics and 30 Hz rendering. Counting steps
+      reports double the real duration, which is exactly the trap that made an early version of
+      this test claim a 200% result.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="notes">
+  <h2><span class="num">09</span>Field notes</h2>
+  <p class="deck">Four bugs hit while building this, each of which cost real time. All measured.</p>
+
+  <ol class="bugs">
+    <li>
+      <h3>Joint limits silently locked the wheels</h3>
+      <p>In UsdPhysics, <code>physics:lowerLimit</code> and <code>physics:upperLimit</code> default
+        to ∓infinity — exactly what a continuously rotating wheel needs. Authoring a
+        <em>reversed</em> pair (<code>lower=1</code>, <code>upper=-1</code>) as an “unlimited” idiom
+        hands PhysX an impossible range and the joint locks solid.</p>
+      <p>The symptom is maddening because everything upstream looks perfect: the subscriber receives
+        the Twist, the controller emits the right wheel speeds, the articulation controller accepts
+        them — and the wheels report a velocity of exactly zero.</p>
+      <p class="fix"><b>Fix</b> Author no limit attributes at all on a wheel joint.</p>
+    </li>
+    <li>
+      <h3><code>UsdGeom.Cylinder</code> colliders do not collide</h3>
+      <p>The obvious wheel primitive produces no usable PhysX collider here. The robot sinks until
+        its <em>chassis</em> rests on the floor — exactly one wheel-radius too low — and spins
+        buried wheels at the commanded velocity. Measured on flat ground, all commanded to
+        0.5 m/s for 6 s:</p>
+      <div class="tw" style="max-width:420px">
+        <table>
+          <thead><tr><th>Wheel primitive</th><th class="num">Distance</th></tr></thead>
+          <tbody>
+            <tr><td><span class="n">UsdGeom.Cylinder</span></td><td class="num" style="color:var(--fail)">0.000 m</td></tr>
+            <tr><td><span class="n">UsdGeom.Capsule</span></td><td class="num" style="color:var(--pass)">2.942 m</td></tr>
+            <tr><td><span class="n">UsdGeom.Sphere</span></td><td class="num" style="color:var(--pass)">2.939 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fix"><b>Fix</b> Use a capsule — a cylinder with rounded ends, natively supported.</p>
+    </li>
+    <li>
+      <h3>Frictionless casters stole the load</h3>
+      <p>Two casters plus two wheels is a statically indeterminate four-point contact, and the
+        solver can put most of the normal force on the frictionless casters, leaving the drive
+        wheels to spin with no grip.</p>
+      <p class="fix"><b>Fix</b> Hold the casters 4 mm clear of the floor so the wheels carry the
+        weight and the casters only catch a pitch.</p>
+    </li>
+    <li>
+      <h3>PowerShell launchers swallowed their own output</h3>
+      <p>A PowerShell function returns <em>everything</em> it emits, so
+        <code>exit (Invoke-IsaacPython ...)</code> consumed the simulator’s entire console output as
+        a return value — and exited immediately, orphaning a multi-gigabyte <code>kit.exe</code>.</p>
+      <p class="fix"><b>Fix</b> Emit nothing from the function and read <code>$LASTEXITCODE</code>
+        at the call site.</p>
+    </li>
+  </ol>
+
+  <h3>Two more worth knowing</h3>
+  <p><strong>Do not read poses off the USD stage while playing.</strong> Isaac Sim writes physics
+    results into Fabric for speed; the USD attributes can lag or never update.
+    <code>ComputeLocalToWorldTransform()</code> will happily return a plausible, wrong number. Use
+    <code>Articulation.get_world_poses()</code> instead.</p>
+  <p><strong>Ray-tracing shader compilation is host-RAM hungry, not VRAM hungry.</strong> Isaac Sim
+    logs what it found at start-up — <code class="mono">Max allowing 3 shader compiler sessions
+    based on 6.1 GB of free system memory</code> — and can be taken down by an
+    <code>LLVM ERROR: out of memory</code> during the first rendered frames if that number is low.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="layout">
+  <h2><span class="num">10</span>Project layout</h2>
+<pre><code>.env / .env.example        all configuration; nothing reads your shell
+warehouse_amr/
+  config.py                .env loader + process-local ROS 2 setup
+  app.py                   Kit bootstrap — the ordering rules live here
+  usd_utils.py             USD + PhysX helpers
+  scene/warehouse.py       environment, props, lighting, semantics
+  scene/robot.py           the AMR articulation
+  sensors.py               RTX lidar + camera render products
+  ros_graph.py             the ROS 2 bridge OmniGraph
+  sdg.py                   Replicator randomisers + writer
+  gui.py                   build it inside a running Isaac Sim editor
+scripts/                   entry points (run with Isaac Sim's python)
+ros2_client/               plain ROS 2 nodes (no Isaac Sim)
+run/                       .cmd and .ps1 launchers
+docs/                      architecture, running, troubleshooting, GUI</code></pre>
+
+  <h3>Isolation</h3>
+  <p>The project installs nothing and exports nothing.
+    <code>config.py</code> <em>writes</em> <code>os.environ</code> — a per-process copy — but never
+    reads it for configuration. The launchers set no variables at all. The DDS domain comes from
+    <code>.env</code> on both sides (<code>ROS2Context</code> is created with
+    <code>useDomainIDEnvVar = False</code>, and clients pass <code>domain_id</code> straight to
+    <code>rclpy.init()</code>), so a stale <code>ROS_DOMAIN_ID</code> in some terminal cannot put
+    the two halves on different domains.</p>
+  <p>The one gap in Isaac Sim’s vendored ROS 2 — a missing <code>netifaces</code>, which
+    <code>ros2cli.daemon</code> imports unconditionally — is filled by a ~90-line stand-in
+    registered in <code>sys.modules</code> rather than by installing a package.</p>
+</section>
+
+<footer>
+  <p style="max-width:70ch">Built and verified against Isaac Sim 5.1.0 on Windows 11 with an RTX 5070.
+    Companion markdown: <code>docs/01_architecture.md</code>, <code>docs/02_running.md</code>,
+    <code>docs/03_troubleshooting.md</code>, <code>docs/04_gui.md</code>.</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('themer');
+  var KEY = 'amr-docs-theme';
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved) { root.setAttribute('data-theme', saved); }
+  } catch (e) {}
+  btn.addEventListener('click', function () {
+    var current = root.getAttribute('data-theme');
+    if (!current) {
+      current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    var next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

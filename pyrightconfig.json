@@ -1,0 +1,7 @@
+{
+  "//": "Kit supplies omni/pxr/isaacsim/rclpy at runtime, not from site-packages.",
+  "extraPaths": ["."],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "pythonVersion": "3.11"
+}
