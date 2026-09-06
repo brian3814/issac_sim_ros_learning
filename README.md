@@ -89,6 +89,115 @@ real end-to-end test, not just "did it start". It writes
 
 ---
 
+## Two ways to start Isaac Sim
+
+The difference is simply *who launches Kit* — the project, or you. Both end up
+with the same scene, the same bridge and the same topics, and the client
+scripts in terminal 2 are identical either way.
+
+### A — let the project launch it
+
+```cmd
+run\sim.cmd
+```
+
+This starts Isaac Sim, builds the warehouse, wires the bridge and presses play
+for you. It opens the **full editor window** — `--headless` is opt-in, not the
+default. Wait for `[run] playing.` and the topic list, then leave it running.
+
+Use this for everyday work. It is one command and it cannot get out of step
+with the code.
+
+### B — start Isaac Sim yourself, then build into it
+
+Use this when you want the editor open first, when you are already poking at a
+stage, or when you want to rebuild the scene repeatedly without restarting Kit.
+
+**1. Launch Isaac Sim normally.**
+
+```cmd
+C:\isaacsim\isaac-sim.bat
+```
+
+`isaac-sim.bat` runs `setup_ros_env.bat` for you — inside its own `setlocal`,
+so it does not touch your shell. That is why the bridge works in the GUI with
+no extra setup on your part.
+
+**2. Open Window ▸ Script Editor and run:**
+
+```python
+import sys
+sys.path.insert(0, r"D:\code\omniverse_learn\ros2_integration")   # <- your path
+
+from warehouse_amr import gui
+gui.build()
+```
+
+**3. Press ▶ Play.** The nine topics appear when the timeline starts.
+
+`gui.build()` returns immediately and does the work across the next several
+frames — watch the **console** for `[gui]` lines, not the Script Editor output
+pane. Options:
+
+```python
+gui.build(with_ros2=False)    # scene + robot only, no bridge
+gui.build(new_stage=False)    # add to the current stage instead of replacing it
+```
+
+> `new_stage=True` is the default and **discards whatever is open**. Save first
+> if you care about it.
+
+**Why this needs its own entry point.** The scripts under `scripts/` call
+`SimulationApp(...)`, which *starts* Kit. Inside the GUI, Kit is already
+running and a second `SimulationApp` is not allowed — so
+[`warehouse_amr/gui.py`](warehouse_amr/gui.py) does the same assembly without
+one. It also skips `SimulationContext`: the GUI's own timeline drives physics,
+and the PhysicsScene written by `build_warehouse` already pins the solver rate
+from `PHYSICS_HZ`. And because the GUI owns the update loop, anything that
+needs a frame to settle — an extension finishing startup, a fresh stage, an RTX
+sensor being created — has to `await` the next update rather than call
+`simulation_app.update()`. That is why `build()` is asynchronous.
+
+### C — just open the saved stage
+
+```cmd
+run\scene.cmd --save          :: writes _output/warehouse_amr.usd
+C:\isaacsim\isaac-sim.bat     :: then File ▸ Open
+```
+
+Scene and robot only, with no code running — good for inspecting how the robot
+is put together. Lesson 1 deliberately leaves ROS 2 out, so pressing ▶ leaves
+the robot sitting still. That is the correct result, not a fault: nothing is
+commanding the wheels.
+
+### Once it is up
+
+Whichever path you took, the editor is where the abstractions become concrete:
+
+- **Stage ▸ `/World/amr`** — expand it, then click `joints/left_wheel_joint`
+  and read the **Drive** section. Those are the attributes
+  `add_velocity_drive()` writes in code.
+- **Window ▸ Graph Editors ▸ Action Graph** — select `/World/ROS2Graph` and the
+  bridge appears as boxes and wires. Click a node and its inputs
+  (`topicName`, `frameId`, `queueSize`) are editable **live** — the fastest way
+  to experiment before moving a change into `ros_graph.py`.
+- **Script Editor, while it runs** — inspect the live simulation:
+
+  ```python
+  from isaacsim.core.prims import Articulation
+  art = Articulation(prim_paths_expr="/World/amr", name="probe"); art.initialize()
+  print(art.get_world_poses()[0], art.get_joint_velocities())
+  ```
+
+  Read poses this way rather than off the USD stage — Isaac Sim writes physics
+  results into Fabric, so stage transforms can return plausible but wrong
+  numbers during playback.
+
+Full detail, including GUI-specific gotchas, in
+[`docs/04_gui.md`](docs/04_gui.md).
+
+---
+
 ## The lessons
 
 ### Lesson 1–2 — USD, physics, and what a robot actually is
@@ -128,28 +237,9 @@ run\client.cmd ros2 topic hz /scan
 is a complete, if small, robot behaviour.
 
 The graph itself lives in
-[`warehouse_amr/ros_graph.py`](warehouse_amr/ros_graph.py). Open the Isaac Sim
-GUI while `sim.cmd` runs and you can see the same graph as boxes and wires
-under `/World/ROS2Graph`.
-
-### Using the Isaac Sim GUI
-
-`run\sim.cmd` already opens the full editor — `--headless` is opt-in. With
-the window up you can expand `/World/amr` in the Stage panel, read the drive
-attributes on `left_wheel_joint`, and open **Window ▸ Graph Editors ▸ Action
-Graph** on `/World/ROS2Graph` to see the bridge as boxes and wires.
-
-You can also build the scene from Isaac Sim's own **Script Editor**:
-
-```python
-import sys
-sys.path.insert(0, r"D:\code\omniverse_learn\ros2_integration")
-from warehouse_amr import gui
-gui.build()          # then press Play
-```
-
-Full details — including why the GUI needs a separate entry point — in
-[`docs/04_gui.md`](docs/04_gui.md).
+[`warehouse_amr/ros_graph.py`](warehouse_amr/ros_graph.py) — and it is worth
+seeing it as boxes and wires under `/World/ROS2Graph` in the editor while it
+runs. See [Two ways to start Isaac Sim](#two-ways-to-start-isaac-sim).
 
 ### Lesson 5 — synthetic data generation
 
@@ -252,8 +342,8 @@ warehouse_amr/
   gui.py                   build it all inside a running Isaac Sim editor
 scripts/                   entry points (run with Isaac Sim's python)
 ros2_client/               plain ROS 2 nodes (no Isaac Sim)
-run/                       PowerShell launchers
-docs/                      architecture, running, troubleshooting, GUI
+run/                       .cmd and .ps1 launchers
+docs/                      markdown docs + an illustrated index.html
 ```
 
 ## Docs
