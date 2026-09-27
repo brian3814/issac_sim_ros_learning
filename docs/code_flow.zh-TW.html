@@ -448,9 +448,24 @@ footer { border-top: 1px solid var(--line); padding-top: 20px; color: var(--mute
     而不是 physics 的 60 Hz。圖中 graph 評估與 render 的前後順序只是示意，實際順序由 Kit 的 pipeline 決定。</figcaption>
   </figure>
   <div class="note">
-    <p><strong>對 digital twin 的意義：</strong>如果需要每個 physics step 都更新控制（例如高頻伺服），可以把 graph 的觸發源從 <code>OnPlaybackTick</code> 換成
-    <code>isaacsim.core.nodes.OnPhysicsStep</code>，或者在 Python 端用 <code>SimulationContext.add_physics_callback()</code>。
+    <p><strong>對 digital twin 的意義：</strong>如果需要每個 physics step 都更新控制（例如力矩控制，或 physics 頻率遠高於 render），
+    不要把整個 graph 換成 <code>OnPhysicsStep</code>：相機和 lidar 的 Helper 跟 render product 綁在一起，一幀才有一次資料，必須留在 <code>OnPlaybackTick</code>。
+    正確做法是<b>只把控制節點搬到另一個 graph</b>，由 <code>isaacsim.core.nodes.OnPhysicsStep</code> 觸發。依 Isaac Sim 文件的範例，這個 graph 的
+    pipeline stage 要設成 on-demand（<code>og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND</code>）。Python 端的對應做法是 <code>SimulationContext.add_physics_callback()</code>。
     另外，<code>step()</code> 不會自動對齊牆上時間：GPU 夠快時模擬可能比真實時間快，太慢時則會變慢。需要時間同步的應用，請讓 ROS 端使用 <code>/clock</code>（<code>use_sim_time</code>）。</p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th></th><th>OnPlaybackTick（本 repo）</th><th>OnPhysicsStep</th></tr></thead>
+    <tbody>
+      <tr><td>觸發時機</td><td>timeline 播放中，每次 Kit update（每幀）一次</td><td>每個 PhysX step 一次</td></tr>
+      <tr><td>本 repo 的頻率</td><td>約 30 Hz（<code>rendering_dt</code>；GUI 下跟畫面 FPS 有關）</td><td>60 Hz（<code>PHYSICS_HZ</code>），每幀 2 次</td></tr>
+      <tr><td>適合</td><td>相機、RTX lidar 等跟渲染有關的節點；一般低頻發佈</td><td>控制迴圈：每個物理步都要依最新狀態更新的控制</td></tr>
+      <tr><td>Python 對應</td><td>主迴圈裡每次 <code>step()</code> 做一次</td><td><code>add_physics_callback()</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="note kit">
+    <p>本 repo 的差速車用 <code>OnPlaybackTick</code> 就夠了：PhysX 的 velocity drive 在每個 substep 內部本來就會追蹤目標速度，graph 只負責改目標，
+    而 <code>/cmd_vel</code> 本身也只有 20 Hz。本頁所有提到 OnPhysicsStep 的地方都未在 Isaac Sim 上實際執行驗證。</p>
   </div>
 </section>
 
