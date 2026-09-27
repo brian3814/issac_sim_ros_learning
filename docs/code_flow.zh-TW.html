@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse AMR 運作原理</title>
+<style>
+/* ---------- tokens: light ---------- */
+:root {
+  color-scheme: light;
+  --paper:#eaeef2; --surface:#ffffff; --surface-2:#f4f7fa;
+  --ink:#0e1620; --ink-2:#34424f; --muted:#5d6c78;
+  --line:#ccd6de; --line-2:#aab7c2;
+  --accent:#a35a00; --accent-2:#7d4400; --accent-wash:#fbf0e0;
+  --signal:#056b78; --signal-wash:#ddeff1;
+  --kit:#5b3fb0; --kit-wash:#eee9fb;
+  --dds:#3d6e12; --dds-wash:#e8f2dc;
+  --pass:#14663f; --fail:#a2291d;
+  --shadow:0 1px 2px rgba(14,22,32,.06), 0 8px 24px -12px rgba(14,22,32,.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper:#0b1016; --surface:#131b23; --surface-2:#182129;
+    --ink:#e3ecf3; --ink-2:#b7c5d1; --muted:#8a9cab;
+    --line:#26333f; --line-2:#3a4a58;
+    --accent:#f2a33c; --accent-2:#ffc072; --accent-wash:#2a1d0c;
+    --signal:#4fd1c5; --signal-wash:#0d2a2b;
+    --kit:#b49cff; --kit-wash:#1f1934;
+    --dds:#9fd66b; --dds-wash:#16230d;
+    --pass:#5ddb9a; --fail:#ff8a7a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#0b1016; --surface:#131b23; --surface-2:#182129;
+  --ink:#e3ecf3; --ink-2:#b7c5d1; --muted:#8a9cab;
+  --line:#26333f; --line-2:#3a4a58;
+  --accent:#f2a33c; --accent-2:#ffc072; --accent-wash:#2a1d0c;
+  --signal:#4fd1c5; --signal-wash:#0d2a2b;
+  --kit:#b49cff; --kit-wash:#1f1934;
+  --dds:#9fd66b; --dds-wash:#16230d;
+  --pass:#5ddb9a; --fail:#ff8a7a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+/* ---------- base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  font-size: 16px; line-height: 1.72; -webkit-font-smoothing: antialiased;
+}
+.mono, code, kbd, pre, .eyebrow, th {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { color: var(--accent-2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+.shell { max-width: 1240px; margin: 0 auto; padding: 0 16px 96px; }
+@media (min-width: 1080px) {
+  .shell { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 52px; align-items: start; padding: 0 24px 96px; }
+  .masthead { grid-column: 1 / -1; }
+}
+.masthead { padding: 48px 0 26px; border-bottom: 1px solid var(--line); margin-bottom: 36px; position: relative; }
+.eyebrow { font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+h1 { font-size: clamp(26px, 4.2vw, 40px); line-height: 1.2; margin: 0 0 14px; letter-spacing: -.01em; font-weight: 680; max-width: 24ch; }
+.standfirst { font-size: clamp(15.5px, 1.6vw, 18px); color: var(--ink-2); max-width: 64ch; margin: 0 0 20px; }
+#themer {
+  position: absolute; top: 48px; right: 0; background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--line-2); border-radius: 2px; font: 600 11px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .08em; padding: 9px 12px; cursor: pointer;
+}
+#themer:hover { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 640px) { #themer { position: static; margin-bottom: 18px; } }
+
+.keypoints { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.keypoints li { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 3px; padding: 12px 14px; font-size: 14.5px; color: var(--ink-2); max-width: none; }
+.keypoints li b { color: var(--ink); display: block; margin-bottom: 2px; }
+.keypoints li:nth-child(2) { border-top-color: var(--kit); }
+.keypoints li:nth-child(3) { border-top-color: var(--dds); }
+
+.rail { display: none; }
+@media (min-width: 1080px) {
+  .rail { display: block; position: sticky; top: 28px; font-size: 13.5px; }
+  .rail p { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-family: ui-monospace, Menlo, monospace; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rail a { display: block; padding: 4px 0 4px 12px; color: var(--ink-2); text-decoration: none; border-left: 2px solid var(--line); }
+  .rail a:hover { color: var(--accent); border-left-color: var(--accent); }
+}
+
+section { margin: 0 0 64px; scroll-margin-top: 20px; }
+h2 { font-size: clamp(20px, 2.4vw, 26px); font-weight: 680; margin: 0 0 6px; }
+h2 .num { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); font-weight: 600; margin-right: 12px; vertical-align: 3px; }
+.deck { color: var(--muted); margin: 0 0 24px; max-width: 68ch; font-size: 15px; }
+p, li { max-width: 72ch; }
+p { margin: 0 0 14px; }
+h3 { font-size: 17px; margin: 30px 0 10px; font-weight: 680; }
+
+figure { margin: 26px 0; padding: 18px 18px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 3px; box-shadow: var(--shadow); }
+.fig-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+figure svg { display: block; width: 100%; min-width: 780px; height: auto; }
+figcaption { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); max-width: 84ch; }
+figcaption b { color: var(--ink-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted); }
+.legend li { display: flex; align-items: center; gap: 7px; max-width: none; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; display: inline-block; flex: none; }
+.sw.sh { background: var(--surface-2); border-color: var(--line-2); }
+.sw.py { background: var(--accent-wash); border-color: var(--accent); }
+.sw.kit { background: var(--kit-wash); border-color: var(--kit); }
+.sw.cl { background: var(--signal-wash); border-color: var(--signal); }
+.sw.dds { background: var(--dds-wash); border-color: var(--dds); }
+
+/* ---------- svg vocabulary ---------- */
+svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; }
+svg .st { fill: var(--ink); font-size: 13px; font-weight: 650; }
+svg .ss { white-space: pre; fill: var(--muted); font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Microsoft JhengHei", monospace; }
+svg .sv { fill: var(--ink-2); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Microsoft JhengHei", monospace; }
+svg .tg { fill: var(--muted); font-size: 10px; letter-spacing: .04em; }
+svg .lh { fill: var(--ink-2); font-size: 12.5px; font-weight: 700; }
+svg .big { fill: var(--ink); font-size: 14.5px; font-weight: 700; }
+svg .b-shell { fill: var(--surface-2); stroke: var(--line-2); stroke-width: 1.2; }
+svg .b-py    { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.2; }
+svg .b-kit   { fill: var(--kit-wash); stroke: var(--kit); stroke-width: 1.2; }
+svg .b-cl    { fill: var(--signal-wash); stroke: var(--signal); stroke-width: 1.2; }
+svg .b-dds   { fill: var(--dds-wash); stroke: var(--dds); stroke-width: 1.2; }
+svg .b-plain { fill: var(--surface); stroke: var(--line-2); stroke-width: 1.2; }
+svg .strong  { stroke-width: 2.4; }
+svg .dashb   { stroke-dasharray: 5 4; }
+svg .fr-kit  { fill: none; stroke: var(--kit); stroke-width: 2; stroke-dasharray: 8 5; }
+svg .fr-cl   { fill: none; stroke: var(--signal); stroke-width: 2; stroke-dasharray: 8 5; }
+svg .lane-sh  { fill: var(--surface-2); opacity: .55; }
+svg .lane-py  { fill: var(--accent-wash); opacity: .45; }
+svg .lane-kit { fill: var(--kit-wash); opacity: .55; }
+svg .fr-a { fill: var(--surface-2); opacity: .7; }
+svg .fr-b { fill: var(--surface); opacity: .7; }
+svg .lane-rule, svg .axis { stroke: var(--line-2); stroke-width: 1; }
+svg .l-ink { stroke: var(--ink-2); stroke-width: 1.4; fill: none; }
+svg .l-acc { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+svg .l-sig { stroke: var(--signal); stroke-width: 1.6; fill: none; }
+svg .l-kit { stroke: var(--kit); stroke-width: 1.6; fill: none; }
+svg .l-dds { stroke: var(--dds); stroke-width: 1.6; fill: none; }
+svg .dash { stroke-dasharray: 5 4; }
+svg .mk-ink { fill: var(--ink-2); } svg .mk-acc { fill: var(--accent); } svg .mk-sig { fill: var(--signal); }
+svg .mk-kit { fill: var(--kit); } svg .mk-dds { fill: var(--dds); }
+svg .nb { fill: var(--accent); } svg .nbt { fill: var(--surface); font-size: 10.5px; font-weight: 700; }
+svg .tick { fill: var(--accent); }
+svg .dot-cl { fill: var(--signal); } svg .dot-dds { fill: var(--dds); }
+
+/* ---------- code, tables, notes ---------- */
+pre { background: var(--surface-2); border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 2px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; margin: 0 0 18px; color: var(--ink-2); }
+pre .c { color: var(--muted); }
+code { font-size: .88em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 2px; padding: 1px 5px; color: var(--ink-2); word-break: break-word; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+kbd { font-size: 12px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 3px; padding: 1px 6px; background: var(--surface); }
+.tw { overflow-x: auto; margin: 0 0 22px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 620px; }
+th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid; white-space: nowrap; }
+.pill.kit { color: var(--kit); border-color: var(--kit); background: var(--kit-wash); }
+.pill.py { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+.pill.cl { color: var(--signal); border-color: var(--signal); background: var(--signal-wash); }
+.pill.sh { color: var(--ink-2); border-color: var(--line-2); background: var(--surface-2); }
+.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--accent-wash); border-radius: 3px; padding: 13px 16px; margin: 0 0 20px; font-size: 14.5px; color: var(--ink-2); }
+.note.kit { border-left-color: var(--kit); background: var(--kit-wash); }
+.note.warn { border-left-color: var(--fail); background: var(--surface); }
+.note p:last-child { margin-bottom: 0; }
+.note strong { color: var(--ink); }
+ol.steps { padding-left: 22px; } ol.steps li { margin-bottom: 8px; }
+.rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.rules li { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--fail); border-radius: 3px; padding: 11px 14px; font-size: 14.5px; color: var(--ink-2); max-width: none; }
+.rules li b { color: var(--ink); }
+
+/* ---------- interactive demo ---------- */
+.demo { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; box-shadow: var(--shadow); padding: 16px; margin: 26px 0; }
+.demo:focus-within, .demo:focus { border-color: var(--accent); outline: none; }
+.demo-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 12px; }
+.demo-head b { font-size: 15px; }
+.demo-head span { font-size: 12.5px; color: var(--muted); }
+.demo-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 780px) { .demo-grid { grid-template-columns: 250px minmax(0, 1fr); } }
+.pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 46px); gap: 6px; justify-content: start; }
+.pad button { font: 700 15px/1 ui-monospace, Menlo, monospace; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-2); border-bottom-width: 3px; border-radius: 5px; cursor: pointer; touch-action: manipulation; }
+.pad button:hover { border-color: var(--accent); color: var(--accent); }
+.pad button.hit { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.pad .w { grid-column: 2; grid-row: 1; } .pad .a { grid-column: 1; grid-row: 2; }
+.pad .s { grid-column: 2; grid-row: 2; } .pad .d { grid-column: 3; grid-row: 2; }
+.pad .sp { grid-column: 1 / 4; grid-row: 3; font-size: 12px; }
+.readout { margin-top: 12px; font: 12.5px/1.75 ui-monospace, Menlo, monospace; color: var(--ink-2); }
+.readout div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed var(--line); }
+.readout span:last-child { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.arena svg { width: 100%; height: auto; display: block; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; }
+.arena .wall { fill: none; stroke: var(--line-2); stroke-width: .12; }
+.arena .trail { fill: none; stroke: var(--signal); stroke-width: .05; opacity: .7; }
+.arena .body { fill: var(--kit); }
+.arena .nose { fill: var(--accent); }
+.arena .grid { stroke: var(--line); stroke-width: .02; }
+.demo small { color: var(--muted); font-size: 12px; display: block; margin-top: 8px; }
+
+footer { border-top: 1px solid var(--line); padding-top: 20px; color: var(--muted); font-size: 13px; }
+@media print { .rail, #themer, .demo { display: none; } body { background: #fff; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header class="masthead">
+  <button id="themer" type="button" aria-label="切換深淺色">THEME</button>
+  <p class="eyebrow">Warehouse AMR · Isaac Sim 5.1 · ROS 2 Humble · 程式運作原理</p>
+  <h1>程式在哪裡跑、怎麼啟動、按下 WASD 之後發生什麼</h1>
+  <p class="standfirst">給要在這個 repo 上開發 digital twin 的人：說明哪些程式碼跑在 Omniverse（Kit）裡、哪些不是，
+  <code>run\sim.cmd</code> 的每一步做了什麼，以及一個按鍵從鍵盤到 PhysX 輪子、再以 <code>/odom</code> 回到你的程式的完整路徑。</p>
+  <ul class="keypoints">
+    <li><b>兩個行程，靠 DDS 相連</b>Isaac Sim（Kit）是一個行程，teleop／patrol 是另一個。兩者之間只有 ROS 2 topic，沒有共用記憶體。</li>
+    <li><b>Python 只負責「建構」</b>你的 Python 寫 USD、建 OmniGraph，之後只呼叫 <code>step()</code>。每幀的 ROS 收發、控制、物理都是 Kit 裡的 C++ 在跑。</li>
+    <li><b>.env 是唯一的設定來源</b>兩邊都從 <code>.env</code> 讀 DDS domain、輪徑、速度上限，所以兩邊一定一致。</li>
+  </ul>
+</header>
+
+<nav class="rail" aria-label="目錄">
+  <p>目錄</p>
+  <ol>
+    <li><a href="#scope">01 執行範圍</a></li>
+    <li><a href="#files">02 檔案 × 執行位置</a></li>
+    <li><a href="#startup">03 啟動順序</a></li>
+    <li><a href="#client">04 Client 啟動</a></li>
+    <li><a href="#frame">05 一幀之內</a></li>
+    <li><a href="#graph">06 OmniGraph 接線</a></li>
+    <li><a href="#wasd">07 WASD 訊號流</a></li>
+    <li><a href="#entry">08 其他啟動方式</a></li>
+    <li><a href="#twin">09 Digital twin 開發</a></li>
+    <li><a href="#rules">10 必守規則</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- =============================================================== -->
+<section id="scope">
+  <h2><span class="num">01</span>執行範圍：哪些在 Omniverse 裡跑</h2>
+  <p class="deck">最重要的一張圖。左邊的大框是 Isaac Sim 行程，也就是 Omniverse Kit；右邊是一般的 ROS 2 程式。它們只透過 DDS 網路溝通。</p>
+
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 960 580" role="img" aria-labelledby="scope-t">
+      <title id="scope-t">行程與執行範圍總覽</title>
+      <defs>
+        <marker id="sc-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sc-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-sig" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sc-dds" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dds" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sc-kit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-kit" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+
+      <!-- launchers -->
+      <rect class="b-shell" x="20" y="10" width="600" height="44" rx="4"/>
+      <text class="st" x="32" y="28">Shell：run\sim.cmd → _common.cmd → python.bat -u scripts\02_run_sim_ros2.py</text>
+      <text class="ss" x="32" y="45">只讀 .env 的 ISAACSIM_ROOT 找到 python.bat；setlocal，不改任何環境變數</text>
+      <rect class="b-shell" x="740" y="10" width="200" height="44" rx="4"/>
+      <text class="st" x="752" y="28">run\client.cmd teleop</text>
+      <text class="ss" x="752" y="45">→ python.bat teleop_key.py</text>
+      <line class="l-ink" x1="320" y1="54" x2="320" y2="73" marker-end="url(#sc-ink)"/>
+      <line class="l-ink" x1="840" y1="54" x2="840" y2="73" marker-end="url(#sc-ink)"/>
+
+      <!-- process 1 -->
+      <rect class="fr-kit" x="20" y="76" width="600" height="494" rx="8"/>
+      <text class="big" x="36" y="100">① Isaac Sim 行程（Omniverse Kit）</text>
+      <text class="ss" x="336" y="100">GPU · 單一行程 · GUI 用 isaac-sim.bat</text>
+
+      <rect class="b-py" x="40" y="114" width="560" height="152" rx="4"/>
+      <text class="st" x="52" y="134">你的 Python（warehouse_amr/*）— 只在「建構期」跑一次</text>
+      <text class="ss" x="52" y="156">config.py</text>        <text class="ss" x="178" y="156">.env → Config；設定行程內的 ROS 2 環境變數</text>
+      <text class="ss" x="52" y="174">app.py</text>           <text class="ss" x="178" y="174">SimulationApp()、啟用 extensions、shutdown</text>
+      <text class="ss" x="52" y="192">scene/*.py</text>       <text class="ss" x="178" y="192">用 pxr 寫 USD：倉庫、棧板、AMR articulation</text>
+      <text class="ss" x="52" y="210">sensors.py</text>       <text class="ss" x="178" y="210">IsaacSensorCreateRtxLidar + render product</text>
+      <text class="ss" x="52" y="228">ros_graph.py</text>     <text class="ss" x="178" y="228">og.Controller.edit() 建立 /World/ROS2Graph</text>
+      <text class="ss" x="52" y="250">主迴圈</text>           <text class="sv" x="178" y="250">while running: simulation_context.step(render=True)</text>
+
+      <line class="l-kit" x1="320" y1="266" x2="320" y2="289" marker-end="url(#sc-kit)"/>
+      <text class="ss" x="332" y="282">寫入 USD · 建 graph · 推進時間</text>
+
+      <rect class="b-kit" x="40" y="292" width="560" height="264" rx="4"/>
+      <text class="st" x="52" y="312">Omniverse Kit runtime（C++）— timeline 播放時每幀執行</text>
+      <rect class="b-plain" x="56" y="324" width="168" height="50" rx="4"/>
+      <text class="st" x="66" y="344">USD Stage / Fabric</text><text class="ss" x="66" y="362">/World/... 場景資料</text>
+      <rect class="b-plain" x="236" y="324" width="168" height="50" rx="4"/>
+      <text class="st" x="246" y="344">PhysX 5</text><text class="ss" x="246" y="362">TGS solver · 60 Hz</text>
+      <rect class="b-plain" x="416" y="324" width="168" height="50" rx="4"/>
+      <text class="st" x="426" y="344">RTX Renderer</text><text class="ss" x="426" y="362">相機 / 雷達 render</text>
+      <line class="l-kit" x1="140" y1="376" x2="140" y2="395" marker-start="url(#sc-kit)" marker-end="url(#sc-kit)"/>
+      <line class="l-kit" x1="320" y1="376" x2="320" y2="395" marker-start="url(#sc-kit)" marker-end="url(#sc-kit)"/>
+      <line class="l-kit" x1="500" y1="376" x2="500" y2="395" marker-start="url(#sc-kit)" marker-end="url(#sc-kit)"/>
+
+      <rect class="b-plain strong" x="56" y="398" width="528" height="146" rx="4"/>
+      <text class="st" x="68" y="418">OmniGraph  /World/ROS2Graph</text>
+      <text class="ss" x="300" y="418">OnPlaybackTick：每次 Kit update 觸發</text>
+      <rect class="b-dds" x="68" y="430" width="164" height="26" rx="3"/><text class="ss" x="78" y="447">ROS2SubscribeTwist</text>
+      <rect class="b-kit" x="240" y="430" width="164" height="26" rx="3"/><text class="ss" x="250" y="447">DifferentialController</text>
+      <rect class="b-kit" x="412" y="430" width="164" height="26" rx="3"/><text class="ss" x="422" y="447">ArticulationController</text>
+      <rect class="b-kit" x="68" y="464" width="164" height="26" rx="3"/><text class="ss" x="78" y="481">IsaacComputeOdometry</text>
+      <rect class="b-dds" x="240" y="464" width="164" height="26" rx="3"/><text class="ss" x="250" y="481">ROS2Publish* ×5</text>
+      <rect class="b-dds" x="412" y="464" width="164" height="26" rx="3"/><text class="ss" x="422" y="481">Cam/Lidar Helper ×4</text>
+      <text class="ss" x="68" y="512">isaacsim.ros2.bridge extension 內含 FastDDS / rclcpp：</text>
+      <text class="ss" x="68" y="529">exts/isaacsim.ros2.bridge/humble/lib（不需要另外安裝 ROS 2）</text>
+
+      <!-- DDS -->
+      <rect class="b-dds" x="630" y="372" width="100" height="44" rx="4"/>
+      <text class="st" x="642" y="390">DDS / UDP</text>
+      <text class="ss" x="642" y="407">domain=.env</text>
+      <line class="l-sig" x1="750" y1="442" x2="588" y2="442" marker-end="url(#sc-sig)"/>
+      <text class="sv" x="630" y="436">/cmd_vel</text>
+      <line class="l-dds" x1="588" y1="478" x2="750" y2="478" marker-end="url(#sc-dds)"/>
+      <text class="ss" x="606" y="498">/odom /tf /scan</text>
+      <text class="ss" x="606" y="513">/rgb /depth …</text>
+
+      <!-- process 2 -->
+      <rect class="fr-cl" x="740" y="76" width="200" height="494" rx="8"/>
+      <text class="big" x="754" y="100">② ROS 2 client 行程</text>
+      <text class="ss" x="754" y="118">不啟動 Kit、不用 GPU</text>
+      <rect class="b-cl" x="752" y="132" width="176" height="128" rx="4"/>
+      <text class="st" x="762" y="152">Isaac 內附的 rclpy</text>
+      <text class="ss" x="762" y="174">_bootstrap.init_ros2()</text>
+      <text class="ss" x="762" y="192">sys.path += bridge/</text>
+      <text class="ss" x="762" y="208">       humble/rclpy</text>
+      <text class="ss" x="762" y="226">rclpy.init(</text>
+      <text class="ss" x="762" y="242">  domain_id=.env)</text>
+      <rect class="b-plain" x="752" y="276" width="176" height="200" rx="4"/>
+      <text class="st" x="762" y="296">client 程式</text>
+      <text class="sv" x="762" y="322">teleop_key.py</text><text class="ss" x="762" y="338">WASD → /cmd_vel</text>
+      <text class="sv" x="762" y="364">patrol.py</text><text class="ss" x="762" y="380">/scan+/odom → /cmd_vel</text>
+      <text class="sv" x="762" y="406">topic_monitor.py</text><text class="ss" x="762" y="422">量測各 topic 頻率</text>
+      <text class="sv" x="762" y="448">ros2cli.py</text><text class="ss" x="762" y="464">ros2 topic list …</text>
+      <text class="ss" x="754" y="506">換成實體 AMR 也照跑：</text>
+      <text class="ss" x="754" y="522">它只認得 topic 名稱</text>
+    </svg>
+    </div>
+    <ul class="legend">
+      <li><span class="sw sh"></span>Shell 啟動器</li>
+      <li><span class="sw py"></span>你的 Python（建構期）</li>
+      <li><span class="sw kit"></span>Kit runtime / Isaac 計算節點</li>
+      <li><span class="sw dds"></span>ROS 2 bridge / DDS</li>
+      <li><span class="sw cl"></span>ROS 2 client 行程</li>
+    </ul>
+    <figcaption><b>重點：</b>橘色框是你寫的 Python，但它跑在 Kit 行程<em>裡面</em>，用的是 Kit 的 Python 直譯器。兩個行程都用 <code>python.bat</code> 啟動，
+    但只有 ① 會建立 <code>SimulationApp</code>，也就是啟動 Omniverse。② 只借用 Isaac 內附的 rclpy 函式庫，本身跟 Omniverse 無關。</figcaption>
+  </figure>
+
+  <div class="note kit">
+    <p><strong>最容易誤解的一點：</strong>Isaac Sim 裡並沒有一段 Python 在「收 /cmd_vel、算輪速」。<code>02_run_sim_ros2.py</code> 的主迴圈只有一行：
+    <code>simulation_context.step(render=True)</code>。訂閱、差速運算、寫入 PhysX、發佈 <code>/odom</code>，全都是 OmniGraph 節點（C++）在每次 Kit update 裡完成。
+    所以要改機器人的「行為」，應該改 <code>ros_graph.py</code> 建出來的 graph，或者在 graph 外另寫 ROS 2 節點，而不是在主迴圈裡加 Python。</p>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="files">
+  <h2><span class="num">02</span>檔案 × 執行位置 × 執行時機</h2>
+  <p class="deck">每個檔案在哪個行程裡跑、什麼時候跑、用了哪些 Omniverse API。</p>
+  <div class="tw"><table>
+    <thead><tr><th>檔案</th><th>行程</th><th>時機</th><th>做什麼 / 使用的 API</th></tr></thead>
+    <tbody>
+      <tr><td><code>run\*.cmd</code> <code>run\*.ps1</code></td><td><span class="pill sh">Shell</span></td><td>啟動時</td><td>從 <code>.env</code> 讀 <code>ISAACSIM_ROOT</code>，<code>pushd</code> 到專案根目錄，執行 <code>python.bat -u &lt;script&gt;</code>。不 export 任何環境變數。</td></tr>
+      <tr><td><code>scripts/01_build_scene.py</code></td><td><span class="pill kit">Kit ①</span></td><td>入口</td><td>第 1–2 課：只有場景和物理，<b>不含 ROS</b>。可用 <code>--spin</code> 以 <code>Articulation.set_joint_velocity_targets</code> 開環驅動輪子，<code>--save</code> 則匯出 USD。</td></tr>
+      <tr><td><code>scripts/02_run_sim_ros2.py</code></td><td><span class="pill kit">Kit ①</span></td><td>入口</td><td>第 3–4 課：完整的 sim + ROS 2 bridge。<code>--self-test</code> 會在<b>同一個 Kit 行程裡</b>另外 <code>rclpy.init()</code>，自己送 <code>/cmd_vel</code>，再驗證 <code>/odom</code> 有反應。</td></tr>
+      <tr><td><code>scripts/03_generate_dataset.py</code></td><td><span class="pill kit">Kit ③</span></td><td>入口</td><td>第 5 課：用 Replicator 產生合成資料，不開 ROS bridge。為了不影響即時性，刻意跟 ② 分成不同行程。</td></tr>
+      <tr><td><code>warehouse_amr/config.py</code></td><td><span class="pill py">兩邊都用</span></td><td>最先</td><td>解析 <code>.env</code>。<code>apply_ros2_process_env()</code> 會寫入<b>本行程</b>的 <code>ROS_DISTRO / RMW_IMPLEMENTATION / ROS_DOMAIN_ID / PATH</code>，並呼叫 <code>add_dll_directory</code>。</td></tr>
+      <tr><td><code>warehouse_amr/app.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期</td><td><code>SimulationApp()</code>、<code>enable_extension()</code>、<code>verify_ros2_bridge()</code>、<code>shutdown()</code>（最後以 <code>os._exit</code> 強制結束）。</td></tr>
+      <tr><td><code>warehouse_amr/usd_utils.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期</td><td>純 <code>pxr</code>：<code>UsdPhysics.RigidBodyAPI / CollisionAPI / RevoluteJoint / DriveAPI / ArticulationRootAPI</code>、<code>PhysxSchema</code>、reference 與單位換算。</td></tr>
+      <tr><td><code>warehouse_amr/scene/warehouse.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期</td><td><code>/World</code>、<code>PhysicsScene</code>（TGS、CCD、<code>timeStepsPerSecond=PHYSICS_HZ</code>）、地板牆面或 <code>Warehouse01.usd</code>、燈光、貨架（靜態）、棧板（rigid body 加上 <code>add_labels</code> 語意標籤）。</td></tr>
+      <tr><td><code>warehouse_amr/scene/robot.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期</td><td>AMR 本體：articulation root、<code>base_link</code>、兩個 capsule 輪子、無摩擦腳輪、revolute joint 加上 velocity drive（stiffness 0、damping 1e4），以及相機。</td></tr>
+      <tr><td><code>warehouse_amr/sensors.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期</td><td><code>IsaacSensorCreateRtxLidar</code> 指令（首次執行會下載 profile），再用 <code>rep.create.render_product(lidar, [1,1])</code> 建立 render product。</td></tr>
+      <tr><td><code>warehouse_amr/ros_graph.py</code></td><td><span class="pill kit">Kit</span></td><td>建構期<br>（graph 每幀跑）</td><td><code>og.Controller.edit()</code> 一次建好 19 個節點、設定參數並接線。之後每幀由 Kit 評估這個 graph，Python 不再參與。</td></tr>
+      <tr><td><code>warehouse_amr/gui.py</code></td><td><span class="pill kit">Kit（GUI）</span></td><td>Script Editor</td><td>在<b>已經開著</b>的 Isaac Sim 裡建構同樣的東西：用 <code>await next_update_async()</code> 取代 <code>update()</code>，不建立 <code>SimulationContext</code>，最後由你按 ▶。</td></tr>
+      <tr><td><code>warehouse_amr/sdg.py</code></td><td><span class="pill kit">Kit ③</span></td><td>資料生成</td><td>Replicator：<code>on_frame</code> 隨機化器、<code>BasicWriter</code>、<code>orchestrator.step(rt_subframes)</code>。</td></tr>
+      <tr><td><code>ros2_client/_bootstrap.py</code></td><td><span class="pill cl">Client ②</span></td><td>client 啟動</td><td>把 <code>exts/isaacsim.ros2.bridge/&lt;distro&gt;/rclpy</code> 加進 <code>sys.path</code>，再以 <code>rclpy.init(domain_id=.env)</code> 初始化並建立 node。</td></tr>
+      <tr><td><code>ros2_client/teleop_key.py</code></td><td><span class="pill cl">Client ②</span></td><td>20 Hz 迴圈</td><td>WASD 調整 Twist 並持續發佈到 <code>/cmd_vel</code>。</td></tr>
+      <tr><td><code>ros2_client/patrol.py</code></td><td><span class="pill cl">Client ②</span></td><td>20 Hz 迴圈</td><td>狀態機 DRIVE / BACKUP / TURN：訂閱 <code>/scan</code>、<code>/odom</code>，發佈 <code>/cmd_vel</code>。</td></tr>
+      <tr><td><code>ros2_client/topic_monitor.py</code> <code>ros2cli.py</code> <code>_netifaces_shim.py</code></td><td><span class="pill cl">Client ②</span></td><td>工具</td><td>量測 topic 頻率；執行內附的 <code>ros2</code> CLI；<code>netifaces</code> 的替身（ros2cli 需要它，但 Isaac 沒有附）。</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- =============================================================== -->
+<section id="startup">
+  <h2><span class="num">03</span>啟動順序：<code>run\sim.cmd</code></h2>
+  <p class="deck">由上往下依序執行。三條泳道分別是 Shell、你的 Python、Kit runtime。紫色箭頭表示 Python 呼叫 API，讓 Kit 端產生實際效果。</p>
+  <figure>
+    <div class="fig-scroll"><svg viewBox="0 0 960 816" role="img" aria-labelledby="seq-t"><title id="seq-t">run\sim.cmd 啟動時序</title><defs><marker id="sq-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker><marker id="sq-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker><marker id="sq-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-sig" d="M0,0 L10,5 L0,10 z"/></marker><marker id="sq-kit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-kit" d="M0,0 L10,5 L0,10 z"/></marker><marker id="sq-dds" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dds" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="lane-sh" x="4" y="4" width="204" height="808" rx="6"/><text class="lh" x="16" y="30">Shell（Windows cmd）</text><rect class="lane-py" x="212" y="4" width="378" height="808" rx="6"/><text class="lh" x="224" y="30">你的 Python（在 Kit 行程內）</text><rect class="lane-kit" x="596" y="4" width="360" height="808" rx="6"/><text class="lh" x="608" y="30">Omniverse Kit runtime（C++）</text><rect class="b-shell" x="12" y="58" width="188" height="40" rx="4"/><text class="st" x="22" y="76">sim.cmd → _common.cmd</text><text class="ss" x="22" y="92">讀 .env → ISAACSIM_ROOT</text><circle class="nb" cx="10" cy="58" r="9"/><text class="nbt" x="10" y="61.5" text-anchor="middle">1</text><line class="l-ink" x1="42" y1="98" x2="42" y2="107" marker-end="url(#sq-ink)"/><rect class="b-shell" x="12" y="108" width="188" height="40" rx="4"/><text class="st" x="22" y="126">call python.bat -u</text><text class="ss" x="22" y="142">scripts\02_run_sim_ros2.py</text><rect class="b-py" x="220" y="108" width="362" height="40" rx="4"/><text class="st" x="230" y="126">main()</text><text class="ss" x="230" y="142">sys.path 加入專案根目錄；argparse</text><line class="l-ink" x1="200" y1="128" x2="219" y2="128" marker-end="url(#sq-ink)"/><circle class="nb" cx="10" cy="108" r="9"/><text class="nbt" x="10" y="111.5" text-anchor="middle">2</text><line class="l-ink" x1="250" y1="148" x2="250" y2="157" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="158" width="362" height="40" rx="4"/><text class="st" x="230" y="176">load_config()</text><text class="ss" x="230" y="192">.env → Config（從不讀 os.environ）</text><circle class="nb" cx="218" cy="158" r="9"/><text class="nbt" x="218" y="161.5" text-anchor="middle">3</text><line class="l-ink" x1="250" y1="198" x2="250" y2="207" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="208" width="362" height="40" rx="4"/><text class="st" x="230" y="226">apply_ros2_process_env()</text><text class="ss" x="230" y="242">ROS_DOMAIN_ID · RMW · PATH += bridge/humble/lib</text><circle class="nb" cx="218" cy="208" r="9"/><text class="nbt" x="218" y="211.5" text-anchor="middle">4</text><line class="l-ink" x1="250" y1="248" x2="250" y2="257" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="258" width="362" height="40" rx="4"/><text class="st" x="230" y="276">app.launch() → SimulationApp({...})</text><text class="ss" x="230" y="292">headless / 1280×720</text><rect class="b-kit" x="604" y="258" width="344" height="40" rx="4"/><text class="st" x="614" y="276">Kit runtime 啟動</text><text class="ss" x="614" y="292">此後才可 import omni / pxr / isaacsim</text><line class="l-kit" x1="582" y1="278" x2="603" y2="278" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="258" r="9"/><text class="nbt" x="218" y="261.5" text-anchor="middle">5</text><line class="l-ink" x1="250" y1="298" x2="250" y2="307" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="308" width="362" height="40" rx="4"/><text class="st" x="230" y="326">enable_required_extensions()</text><text class="ss" x="230" y="342">sensors.rtx · replicator.core · ros2.bridge</text><rect class="b-kit" x="604" y="308" width="344" height="40" rx="4"/><text class="st" x="614" y="326">載入 extensions</text><text class="ss" x="614" y="342">bridge 載入 FastDDS / rclcpp 動態庫</text><line class="l-kit" x1="582" y1="328" x2="603" y2="328" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="308" r="9"/><text class="nbt" x="218" y="311.5" text-anchor="middle">6</text><line class="l-ink" x1="250" y1="348" x2="250" y2="357" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="358" width="362" height="40" rx="4"/><text class="st" x="230" y="376">verify_ros2_bridge()</text><text class="ss" x="230" y="392">bridge 沒啟用 → 印警告</text><circle class="nb" cx="218" cy="358" r="9"/><text class="nbt" x="218" y="361.5" text-anchor="middle">7</text><line class="l-ink" x1="250" y1="398" x2="250" y2="407" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="408" width="362" height="40" rx="4"/><text class="st" x="230" y="426">new_stage() → build_warehouse()</text><text class="ss" x="230" y="442">scene/warehouse.py</text><rect class="b-kit" x="604" y="408" width="344" height="40" rx="4"/><text class="st" x="614" y="426">USD：/World + PhysicsScene</text><text class="ss" x="614" y="442">地板牆面 · 燈光 · 貨架 · 棧板(rigid body)</text><line class="l-kit" x1="582" y1="428" x2="603" y2="428" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="408" r="9"/><text class="nbt" x="218" y="411.5" text-anchor="middle">8</text><line class="l-ink" x1="250" y1="448" x2="250" y2="457" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="458" width="362" height="40" rx="4"/><text class="st" x="230" y="476">build_amr()</text><text class="ss" x="230" y="492">scene/robot.py</text><rect class="b-kit" x="604" y="458" width="344" height="40" rx="4"/><text class="st" x="614" y="476">USD：/World/amr</text><text class="ss" x="614" y="492">articulation · 2 個輪子 joint · 相機</text><line class="l-kit" x1="582" y1="478" x2="603" y2="478" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="458" r="9"/><text class="nbt" x="218" y="461.5" text-anchor="middle">9</text><line class="l-ink" x1="250" y1="498" x2="250" y2="507" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="508" width="362" height="40" rx="4"/><text class="st" x="230" y="526">setup_sensors()</text><text class="ss" x="230" y="542">sensors.py</text><rect class="b-kit" x="604" y="508" width="344" height="40" rx="4"/><text class="st" x="614" y="526">RTX Lidar prim</text><text class="ss" x="614" y="542">+ lidar render product (1×1)</text><line class="l-kit" x1="582" y1="528" x2="603" y2="528" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="508" r="9"/><text class="nbt" x="218" y="511.5" text-anchor="middle">10</text><line class="l-ink" x1="250" y1="548" x2="250" y2="557" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="558" width="362" height="40" rx="4"/><text class="st" x="230" y="576">build_ros2_graph()</text><text class="ss" x="230" y="592">ros_graph.py · og.Controller.edit()</text><rect class="b-kit" x="604" y="558" width="344" height="40" rx="4"/><text class="st" x="614" y="576">OmniGraph /World/ROS2Graph</text><text class="ss" x="614" y="592">19 個節點，已接線但尚未執行</text><line class="l-kit" x1="582" y1="578" x2="603" y2="578" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="558" r="9"/><text class="nbt" x="218" y="561.5" text-anchor="middle">11</text><line class="l-ink" x1="250" y1="598" x2="250" y2="607" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="608" width="362" height="40" rx="4"/><text class="st" x="230" y="626">SimulationContext(...)</text><text class="ss" x="230" y="642">physics_dt 1/60 · rendering_dt 1/30</text><rect class="b-kit" x="604" y="608" width="344" height="40" rx="4"/><text class="st" x="614" y="626">initialize_physics()</text><text class="ss" x="614" y="642">PhysX 解析 USD → 建 articulation</text><line class="l-kit" x1="582" y1="628" x2="603" y2="628" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="608" r="9"/><text class="nbt" x="218" y="611.5" text-anchor="middle">12</text><line class="l-ink" x1="250" y1="648" x2="250" y2="657" marker-end="url(#sq-ink)"/><rect class="b-py strong" x="220" y="658" width="362" height="40" rx="4"/><text class="st" x="230" y="676">simulation_context.play()</text><text class="ss" x="230" y="692">⚑ 從這一刻起才有 topics</text><rect class="b-kit strong" x="604" y="658" width="344" height="40" rx="4"/><text class="st" x="614" y="676">Timeline ▶ PLAY</text><text class="ss" x="614" y="692">OnPlaybackTick 開始觸發 · 建 DDS 實體</text><line class="l-kit" x1="582" y1="678" x2="603" y2="678" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="658" r="9"/><text class="nbt" x="218" y="661.5" text-anchor="middle">13</text><line class="l-ink" x1="250" y1="698" x2="250" y2="707" marker-end="url(#sq-ink)"/><rect class="b-py strong" x="220" y="708" width="362" height="40" rx="4"/><text class="st" x="230" y="726">while is_running(): step(render=True)</text><text class="ss" x="230" y="742">Python 只負責「推進時間」</text><rect class="b-kit strong" x="604" y="708" width="344" height="40" rx="4"/><text class="st" x="614" y="726">每幀：PhysX ×2 + Graph + RTX</text><text class="ss" x="614" y="742">所有 ROS 收發都在這裡（C++）</text><line class="l-kit" x1="582" y1="728" x2="603" y2="728" marker-end="url(#sq-kit)"/><circle class="nb" cx="218" cy="708" r="9"/><text class="nbt" x="218" y="711.5" text-anchor="middle">14</text><line class="l-ink" x1="250" y1="748" x2="250" y2="757" marker-end="url(#sq-ink)"/><rect class="b-py" x="220" y="758" width="362" height="40" rx="4"/><text class="st" x="230" y="776">stop() → app.shutdown()</text><text class="ss" x="230" y="792">close() 之後 os._exit(code)</text><circle class="nb" cx="218" cy="758" r="9"/><text class="nbt" x="218" y="761.5" text-anchor="middle">15</text></svg></div>
+    <figcaption><b>第 13 步是分水嶺：</b>在 <code>play()</code> 之前，graph 只是 USD 上的一堆 prim，DDS 上還沒有任何 publisher 或 subscriber。
+    timeline 開始播放後，ROS2* 節點才建立 DDS 實體，<code>ros2 topic list</code> 才看得到東西。按 ■ 停止時它們會消失。</figcaption>
+  </figure>
+
+  <h3>為什麼順序不能換</h3>
+  <ol class="steps">
+    <li><b>第 4 步必須在第 5 步之前。</b><code>apply_ros2_process_env()</code> 把 <code>bridge/humble/lib</code> 放進 <code>PATH</code> 和 DLL 搜尋路徑。如果順序反過來，bridge extension 載入時找不到 DDS 函式庫，publisher 會<b>靜默失效</b>，而不是報錯。</li>
+    <li><b>第 5 步之前不能 import <code>omni.*</code> / <code>pxr</code> / <code>isaacsim.*</code>。</b>這些模組是 Kit 啟動後才存在的，所以程式碼裡 <code>import omni.usd</code> 都寫在 <code>app.launch()</code> 之後，<code>ros_graph.py</code> 等模組也是在這之後才 import。</li>
+    <li><b>第 10 步必須在第 11 步之前。</b><code>ROS2RtxLidarHelper</code> 需要 lidar 的 render product 路徑，這個路徑是 <code>sensors.py</code> 用 Python 先建好的。相機的 render product 則由 graph 裡的 <code>IsaacCreateRenderProduct</code> 自己建立。</li>
+    <li><b>每步之間的 <code>simulation_app.update()</code></b>是讓 Kit 跑一幀，讓 extension 啟動完成、stage 和 RTX sensor 準備好。GUI 模式不能呼叫 <code>update()</code>，所以改用 <code>await next_update_async()</code>。</li>
+    <li><b>第 12 步的 <code>physics_dt</code></b> 要跟第 8 步寫入 <code>PhysicsScene.timeStepsPerSecond</code> 的值一致，兩者都來自 <code>.env</code> 的 <code>PHYSICS_HZ</code>。</li>
+  </ol>
+</section>
+
+<!-- =============================================================== -->
+<section id="client">
+  <h2><span class="num">04</span>Client 端啟動：<code>run\client.cmd teleop</code></h2>
+  <p class="deck">另一個終端機、另一個行程。這邊不碰 Omniverse。</p>
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 960 150" role="img" aria-labelledby="cl-t">
+      <title id="cl-t">client 啟動流程</title>
+      <defs><marker id="cl-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="b-shell" x="10" y="20" width="170" height="58" rx="4"/>
+      <text class="st" x="20" y="42">client.cmd teleop</text><text class="ss" x="20" y="60">對照表 → teleop_key.py</text>
+      <rect class="b-shell" x="200" y="20" width="170" height="58" rx="4"/>
+      <text class="st" x="210" y="42">_common.cmd</text><text class="ss" x="210" y="60">python.bat -u …</text>
+      <rect class="b-cl" x="390" y="20" width="175" height="58" rx="4"/>
+      <text class="st" x="400" y="42">init_ros2()</text><text class="ss" x="400" y="60">load_config · env</text>
+      <rect class="b-cl" x="585" y="20" width="175" height="58" rx="4"/>
+      <text class="st" x="595" y="42">import rclpy</text><text class="ss" x="595" y="60">來自 Isaac 內附路徑</text>
+      <rect class="b-cl strong" x="780" y="20" width="170" height="58" rx="4"/>
+      <text class="st" x="790" y="42">create_publisher</text><text class="ss" x="790" y="60">Twist, /cmd_vel, 10</text>
+      <line class="l-ink" x1="180" y1="49" x2="199" y2="49" marker-end="url(#cl-ink)"/>
+      <line class="l-ink" x1="370" y1="49" x2="389" y2="49" marker-end="url(#cl-ink)"/>
+      <line class="l-ink" x1="565" y1="49" x2="584" y2="49" marker-end="url(#cl-ink)"/>
+      <line class="l-ink" x1="760" y1="49" x2="779" y2="49" marker-end="url(#cl-ink)"/>
+      <text class="ss" x="400" y="104">apply_ros2_process_env()：ROS_DOMAIN_ID / RMW / PATH（只影響本行程）</text>
+      <text class="ss" x="400" y="122">rclpy.init(domain_id=cfg.ros_domain_id) → rclpy.create_node("warehouse_amr_teleop")</text>
+      <text class="ss" x="400" y="140">DDS discovery 通常需要 1–2 秒，才會跟 Kit 裡的 ROS2SubscribeTwist 配對上</text>
+    </svg>
+    </div>
+    <figcaption>client 用的 Python 是 Isaac 的 <code>python.bat</code>，但它只 <code>import rclpy</code>，不建立 <code>SimulationApp</code>。所以啟動很快，也不用 GPU。
+    Isaac 跟 client 共用同一份 ROS 2 函式庫，不會有版本不一致的問題。</figcaption>
+  </figure>
+</section>
+
+<!-- =============================================================== -->
+<section id="frame">
+  <h2><span class="num">05</span>一幀之內：時間是怎麼推進的</h2>
+  <p class="deck"><code>PHYSICS_HZ=60</code>、<code>RENDER_HZ=30</code>，所以一次 <code>step(render=True)</code> ≈ 33.3 ms 模擬時間，裡面有 2 次 PhysX substep、1 次 graph 評估和 1 次 RTX render。</p>
+  <figure>
+    <div class="fig-scroll"><svg viewBox="0 0 960 330" role="img" aria-labelledby="tm-t"><title id="tm-t">一幀之內的時序</title><defs><marker id="tm-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker><marker id="tm-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker><marker id="tm-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-sig" d="M0,0 L10,5 L0,10 z"/></marker><marker id="tm-kit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-kit" d="M0,0 L10,5 L0,10 z"/></marker><marker id="tm-dds" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dds" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="fr-a" x="200" y="30" width="246.667" height="262"/><text class="ss" x="323.333" y="24" text-anchor="middle">step(render=True) #1</text><rect class="fr-b" x="446.667" y="30" width="246.667" height="262"/><text class="ss" x="570" y="24" text-anchor="middle">step(render=True) #2</text><rect class="fr-a" x="693.333" y="30" width="246.667" height="262"/><text class="ss" x="816.667" y="24" text-anchor="middle">step(render=True) #3</text><text class="st" x="12" y="50">teleop 發佈 /cmd_vel</text><text class="ss" x="12" y="65">20 Hz · client 行程</text><line class="lane-rule" x1="200" y1="56" x2="940" y2="56"/><text class="st" x="12" y="102">PhysX step</text><text class="ss" x="12" y="117">60 Hz · 16.7 ms</text><line class="lane-rule" x1="200" y1="108" x2="940" y2="108"/><text class="st" x="12" y="154">OnPlaybackTick → Graph</text><text class="ss" x="12" y="169">每次 Kit update ≈ 30 Hz</text><line class="lane-rule" x1="200" y1="160" x2="940" y2="160"/><text class="st" x="12" y="206">RTX render</text><text class="ss" x="12" y="221">rendering_dt = 1/30</text><line class="lane-rule" x1="200" y1="212" x2="940" y2="212"/><text class="st" x="12" y="258">/rgb /depth 發佈</text><text class="ss" x="12" y="273">frameSkipCount=1 → 15 Hz</text><line class="lane-rule" x1="200" y1="264" x2="940" y2="264"/><circle class="dot-cl" cx="288.8" cy="56" r="6"/><text class="ss" x="288.8" y="40" text-anchor="middle">publish</text><circle class="dot-cl" cx="658.8" cy="56" r="6"/><text class="ss" x="658.8" y="40" text-anchor="middle">publish</text><rect class="b-kit" x="202" y="96" width="119.333" height="16" rx="2"/><rect class="b-kit" x="325.333" y="96" width="119.333" height="16" rx="2"/><rect class="b-kit" x="448.667" y="96" width="119.333" height="16" rx="2"/><rect class="b-kit" x="572" y="96" width="119.333" height="16" rx="2"/><rect class="b-kit" x="695.333" y="96" width="119.333" height="16" rx="2"/><rect class="b-kit" x="818.667" y="96" width="119.333" height="16" rx="2"/><text class="ss" x="204" y="126">每個 substep 都套用「最後一次寫入」的輪速目標</text><rect class="b-py strong" x="388.667" y="146" width="54" height="18" rx="2"/><text class="ss" x="415.667" y="159" text-anchor="middle">eval</text><rect class="b-kit" x="206" y="198" width="234.667" height="18" rx="2"/><text class="ss" x="323.333" y="211" text-anchor="middle">render</text><rect class="b-py strong" x="635.333" y="146" width="54" height="18" rx="2"/><text class="ss" x="662.333" y="159" text-anchor="middle">eval</text><rect class="b-kit" x="452.667" y="198" width="234.667" height="18" rx="2"/><text class="ss" x="570" y="211" text-anchor="middle">render</text><rect class="b-py strong" x="882" y="146" width="54" height="18" rx="2"/><text class="ss" x="909" y="159" text-anchor="middle">eval</text><rect class="b-kit" x="699.333" y="198" width="234.667" height="18" rx="2"/><text class="ss" x="816.667" y="211" text-anchor="middle">render</text><circle class="dot-dds" cx="415.667" cy="264" r="6"/><circle class="dot-dds" cx="909" cy="264" r="6"/><path class="l-sig dash" d="M288.8,62 C348,110 407.2,120 415.667,144" marker-end="url(#tm-sig)"/><path class="l-sig dash" d="M658.8,62 C673.6,110 688.4,120 662.333,144" marker-end="url(#tm-sig)"/><text class="ss" x="377.6" y="86">Graph 評估時才讀取「最新一筆」Twist</text><line class="axis" x1="200" y1="296" x2="940" y2="296"/><line class="axis" x1="200" y1="296" x2="200" y2="301"/><text class="ss" x="200" y="316" text-anchor="middle">0 ms</text><line class="axis" x1="274" y1="296" x2="274" y2="301"/><text class="ss" x="274" y="316" text-anchor="middle">10 ms</text><line class="axis" x1="348" y1="296" x2="348" y2="301"/><text class="ss" x="348" y="316" text-anchor="middle">20 ms</text><line class="axis" x1="422" y1="296" x2="422" y2="301"/><text class="ss" x="422" y="316" text-anchor="middle">30 ms</text><line class="axis" x1="496" y1="296" x2="496" y2="301"/><text class="ss" x="496" y="316" text-anchor="middle">40 ms</text><line class="axis" x1="570" y1="296" x2="570" y2="301"/><text class="ss" x="570" y="316" text-anchor="middle">50 ms</text><line class="axis" x1="644" y1="296" x2="644" y2="301"/><text class="ss" x="644" y="316" text-anchor="middle">60 ms</text><line class="axis" x1="718" y1="296" x2="718" y2="301"/><text class="ss" x="718" y="316" text-anchor="middle">70 ms</text><line class="axis" x1="792" y1="296" x2="792" y2="301"/><text class="ss" x="792" y="316" text-anchor="middle">80 ms</text><line class="axis" x1="866" y1="296" x2="866" y2="301"/><text class="ss" x="866" y="316" text-anchor="middle">90 ms</text><line class="axis" x1="940" y1="296" x2="940" y2="301"/><text class="ss" x="940" y="316" text-anchor="middle">100 ms</text></svg></div>
+    <figcaption><b>取樣行為：</b>Twist 不會「推」進 PhysX。<code>ROS2SubscribeTwist</code> 在 graph 被評估時，才讀取目前收到的最新一筆訊息。
+    輪速目標寫進 PhysX 之後，會一直保持到下一次 graph 評估。因此 <code>/cmd_vel</code> 的有效控制頻率約等於 Kit update 頻率（此設定下約 30 Hz），
+    而不是 physics 的 60 Hz。圖中 graph 評估與 render 的前後順序只是示意，實際順序由 Kit 的 pipeline 決定。</figcaption>
+  </figure>
+  <div class="note">
+    <p><strong>對 digital twin 的意義：</strong>如果需要每個 physics step 都更新控制（例如高頻伺服），可以把 graph 的觸發源從 <code>OnPlaybackTick</code> 換成
+    <code>isaacsim.core.nodes.OnPhysicsStep</code>，或者在 Python 端用 <code>SimulationContext.add_physics_callback()</code>。
+    另外，<code>step()</code> 不會自動對齊牆上時間：GPU 夠快時模擬可能比真實時間快，太慢時則會變慢。需要時間同步的應用，請讓 ROS 端使用 <code>/clock</code>（<code>use_sim_time</code>）。</p>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="graph">
+  <h2><span class="num">06</span>OmniGraph 接線圖（<code>ros_graph.py</code>）</h2>
+  <p class="deck">這就是 Isaac 端的「ROS 節點」。它是 <code>/World/ROS2Graph</code> 底下的 prim，執行時可以用 Window ▸ Graph Editors ▸ Action Graph 打開，即時修改參數。</p>
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 1080 520" role="img" aria-labelledby="og-t">
+      <title id="og-t">ROS2Graph 節點與連線</title>
+      <defs>
+        <marker id="og-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-sig" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="og-kit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-kit" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="og-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <text class="tg" x="255" y="24">指令輸入</text>
+      <text class="tg" x="255" y="114">里程計</text>
+      <text class="tg" x="255" y="204">TF · 關節 · 時鐘</text>
+      <text class="tg" x="255" y="294">相機</text>
+      <text class="tg" x="255" y="384">雷達</text>
+
+      <rect class="b-py strong" x="20" y="30" width="210" height="44" rx="4"/>
+      <text class="st" x="32" y="48">OnPlaybackTick</text><text class="ss" x="32" y="64">tick → 所有標 ● 的節點</text>
+      <circle class="tick" cx="230" cy="52" r="5"/>
+      <rect class="b-dds" x="20" y="210" width="210" height="44" rx="4"/>
+      <text class="st" x="32" y="228">ROS2Context</text><text class="ss" x="32" y="244">domain_id = .env</text>
+      <text class="ss" x="22" y="272">→ 每個 ROS2* 節點的 inputs:context</text>
+      <rect class="b-kit" x="20" y="300" width="210" height="44" rx="4"/>
+      <text class="st" x="32" y="318">IsaacReadSimulationTime</text><text class="ss" x="32" y="334">simulationTime</text>
+      <text class="ss" x="22" y="362">→ Clock / Odom / TF / JointState</text>
+      <text class="ss" x="22" y="377">  的 inputs:timeStamp</text>
+
+      <!-- row 1 -->
+      <rect class="b-dds" x="255" y="30" width="168" height="44" rx="4"/>
+      <text class="st" x="267" y="48">ROS2SubscribeTwist</text><text class="ss" x="267" y="64">/cmd_vel ← DDS</text>
+      <circle class="tick" cx="255" cy="52" r="5"/>
+      <rect class="b-kit" x="448" y="30" width="152" height="44" rx="4"/>
+      <text class="st" x="460" y="48">BreakVector3 ×2</text><text class="ss" x="460" y="64">linear.x · angular.z</text>
+      <rect class="b-kit" x="616" y="30" width="200" height="44" rx="4"/>
+      <text class="st" x="628" y="48">DifferentialController</text><text class="ss" x="628" y="64">v, ω → [ωL, ωR]</text>
+      <circle class="tick" cx="616" cy="52" r="5"/>
+      <rect class="b-kit strong" x="841" y="30" width="232" height="44" rx="4"/>
+      <text class="st" x="853" y="48">IsaacArticulationController</text><text class="ss" x="853" y="64">→ 輪子 joint 速度目標</text>
+      <circle class="tick" cx="841" cy="52" r="5"/>
+      <line class="l-sig" x1="423" y1="52" x2="447" y2="52" marker-end="url(#og-sig)"/>
+      <line class="l-sig" x1="600" y1="52" x2="610" y2="52" marker-end="url(#og-sig)"/>
+      <line class="l-sig" x1="816" y1="52" x2="835" y2="52" marker-end="url(#og-sig)"/>
+      <line class="l-kit" x1="957" y1="74" x2="957" y2="96" marker-end="url(#og-kit)"/>
+      <text class="ss" x="967" y="92">PhysX</text>
+
+      <!-- row 2 -->
+      <rect class="b-kit" x="255" y="120" width="184" height="44" rx="4"/>
+      <text class="st" x="267" y="138">IsaacComputeOdometry</text><text class="ss" x="267" y="154">讀 base_link 物理狀態</text>
+      <circle class="tick" cx="255" cy="142" r="5"/>
+      <rect class="b-dds" x="469" y="120" width="180" height="44" rx="4"/>
+      <text class="st" x="481" y="138">ROS2PublishOdometry</text><text class="ss" x="481" y="154">/odom</text>
+      <rect class="b-dds" x="680" y="120" width="242" height="44" rx="4"/>
+      <text class="st" x="692" y="138">ROS2PublishRawTransformTree</text><text class="ss" x="692" y="154">/tf  odom → base_link</text>
+      <line class="l-sig" x1="439" y1="142" x2="468" y2="142" marker-end="url(#og-sig)"/>
+      <path class="l-sig" d="M347,164 V180 H801 V166" marker-end="url(#og-sig)"/>
+      <text class="ss" x="470" y="194">execOut + position / orientation / velocity</text>
+
+      <!-- row 3 -->
+      <rect class="b-dds" x="255" y="210" width="230" height="44" rx="4"/>
+      <text class="st" x="267" y="228">ROS2PublishTransformTree</text><text class="ss" x="267" y="244">/tf  base_link → 輪/相機/雷達</text>
+      <circle class="tick" cx="255" cy="232" r="5"/>
+      <rect class="b-dds" x="510" y="210" width="193" height="44" rx="4"/>
+      <text class="st" x="522" y="228">ROS2PublishJointState</text><text class="ss" x="522" y="244">/joint_states</text>
+      <circle class="tick" cx="510" cy="232" r="5"/>
+      <rect class="b-dds" x="728" y="210" width="160" height="44" rx="4"/>
+      <text class="st" x="740" y="228">ROS2PublishClock</text><text class="ss" x="740" y="244">/clock</text>
+      <circle class="tick" cx="728" cy="232" r="5"/>
+
+      <!-- row 4 -->
+      <rect class="b-kit" x="255" y="300" width="217" height="44" rx="4"/>
+      <text class="st" x="267" y="318">IsaacCreateRenderProduct</text><text class="ss" x="267" y="334">front_camera 640×480</text>
+      <circle class="tick" cx="255" cy="322" r="5"/>
+      <rect class="b-dds" x="502" y="300" width="152" height="44" rx="4"/>
+      <text class="st" x="514" y="318">ROS2CameraHelper</text><text class="ss" x="514" y="334">/rgb</text>
+      <rect class="b-dds" x="679" y="300" width="152" height="44" rx="4"/>
+      <text class="st" x="691" y="318">ROS2CameraHelper</text><text class="ss" x="691" y="334">/depth</text>
+      <rect class="b-dds" x="856" y="300" width="192" height="44" rx="4"/>
+      <text class="st" x="868" y="318">ROS2CameraInfoHelper</text><text class="ss" x="868" y="334">/camera_info</text>
+      <line class="l-sig" x1="472" y1="322" x2="501" y2="322" marker-end="url(#og-sig)"/>
+      <path class="l-sig" d="M363,344 V360 H755 V346" marker-end="url(#og-sig)"/>
+      <path class="l-sig" d="M755,360 H952 V346" marker-end="url(#og-sig)"/>
+
+      <!-- row 5 -->
+      <rect class="b-py dashb" x="255" y="390" width="200" height="44" rx="4"/>
+      <text class="st" x="267" y="408">sensors.py（Python）</text><text class="ss" x="267" y="424">rep.create.render_product</text>
+      <rect class="b-dds" x="485" y="390" width="175" height="44" rx="4"/>
+      <text class="st" x="497" y="408">ROS2RtxLidarHelper</text><text class="ss" x="497" y="424">/scan (laser_scan)</text>
+      <circle class="tick" cx="485" cy="412" r="5"/>
+      <line class="l-acc dash" x1="455" y1="412" x2="478" y2="412" marker-end="url(#og-acc)"/>
+      <text class="ss" x="680" y="408">renderProductPath 是建構時用</text>
+      <text class="ss" x="680" y="424">SET_VALUES 填進去的字串（非 graph 連線）</text>
+
+      <circle class="tick" cx="30" cy="474" r="5"/><text class="ss" x="42" y="478">= execIn 直接接 OnPlaybackTick.outputs:tick</text>
+      <line class="l-sig" x1="360" y1="474" x2="400" y2="474" marker-end="url(#og-sig)"/><text class="ss" x="408" y="478">資料連線（也決定評估先後）</text>
+      <text class="ss" x="22" y="502">frameSkipCount = CAMERA_PUBLISH_EVERY_N_FRAMES − 1 · 所有 topicName 都是相對名稱，nodeNamespace = ROS_NAMESPACE</text>
+    </svg>
+    </div>
+    <figcaption><b>兩種連線：</b><code>execIn</code> 決定節點<em>什麼時候</em>跑，資料連線決定它<em>讀什麼</em>。
+    <code>ArticulationController</code> 從 <code>DifferentialController</code> 拉取 <code>velocityCommand</code>，所以即使兩者都接在同一個 tick 上，controller 一定會先算完。
+    frame id 取自 prim 名稱，因此 <code>front_lidar</code> 必須同時是 mount prim 的名稱和 <code>LidarHelper.frameId</code>，否則 <code>/scan</code> 會落在 TF 樹裡不存在的 frame。</figcaption>
+  </figure>
+</section>
+
+<!-- =============================================================== -->
+<section id="wasd">
+  <h2><span class="num">07</span>按下 WASD 之後的訊號流</h2>
+  <p class="deck">以按 <kbd>W</kbd> <kbd>W</kbd> <kbd>A</kbd> 為例，追蹤每一站的實際數值（r = 0.10 m，L = 0.44 m，都來自 <code>.env</code>）。</p>
+  <figure>
+    <div class="fig-scroll"><svg viewBox="0 0 960 776" role="img" aria-labelledby="wd-t"><title id="wd-t">按下 WASD 之後的訊號流</title><defs><marker id="wd-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker><marker id="wd-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker><marker id="wd-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-sig" d="M0,0 L10,5 L0,10 z"/></marker><marker id="wd-kit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-kit" d="M0,0 L10,5 L0,10 z"/></marker><marker id="wd-dds" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dds" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="b-cl" x="20" y="16" width="580" height="58" rx="4"/><text class="st" x="30" y="34">① 鍵盤  W / A / S / D</text><text class="ss" x="30" y="50">teleop_key.py · read_key() → msvcrt.getch()</text><text class="ss" x="30" y="65">Windows 單鍵讀取；非 Windows 走 stdin（要按 Enter）</text><text class="tg" x="592" y="31" text-anchor="end">client 行程</text><rect class="b-plain" x="628" y="16" width="316" height="58" rx="4"/><text class="sv" x="640" y="40">輸入：W, W, A</text><line class="l-ink dash" x1="600" y1="45" x2="628" y2="45"/><line class="l-sig" x1="60" y1="74" x2="60" y2="91" marker-end="url(#wd-sig)"/><rect class="b-cl" x="20" y="92" width="580" height="58" rx="4"/><text class="st" x="30" y="110">② 修改 Twist 狀態（會保持，不是按住才動）</text><text class="ss" x="30" y="126">W/S: linear.x ±0.15（夾在 ±MAX_LINEAR_SPEED）</text><text class="ss" x="30" y="141">A/D: angular.z ±0.3（夾在 ±MAX_ANGULAR_SPEED） · SPACE 歸零</text><text class="tg" x="592" y="107" text-anchor="end">client 行程</text><rect class="b-plain" x="628" y="92" width="316" height="58" rx="4"/><text class="sv" x="640" y="116">linear.x  = +0.30 m/s</text><text class="sv" x="640" y="135">angular.z = +0.30 rad/s</text><line class="l-ink dash" x1="600" y1="121" x2="628" y2="121"/><line class="l-sig" x1="60" y1="150" x2="60" y2="167" marker-end="url(#wd-sig)"/><rect class="b-cl" x="20" y="168" width="580" height="58" rx="4"/><text class="st" x="30" y="186">③ pub.publish(twist)  每 50 ms 一次</text><text class="ss" x="30" y="202">不論有沒有按鍵都持續重送 → 約 20 Hz</text><text class="ss" x="30" y="217">離開時 finally 會送一筆全 0 的 Twist</text><text class="tg" x="592" y="183" text-anchor="end">client 行程</text><rect class="b-plain" x="628" y="168" width="316" height="58" rx="4"/><text class="sv" x="640" y="192">geometry_msgs/Twist</text><text class="sv" x="640" y="211">topic = cfg.topic('cmd_vel')</text><line class="l-ink dash" x1="600" y1="197" x2="628" y2="197"/><line class="l-sig" x1="60" y1="226" x2="60" y2="243" marker-end="url(#wd-sig)"/><rect class="b-dds" x="20" y="244" width="580" height="58" rx="4"/><text class="st" x="30" y="262">④ rclpy → rmw_fastrtps_cpp → UDP</text><text class="ss" x="30" y="278">DDS topic 名稱 rt/cmd_vel · domain 由 .env 指定</text><text class="ss" x="30" y="293">兩邊都用 Isaac 內附的同一套 ROS 2 libs</text><text class="tg" x="592" y="259" text-anchor="end">DDS 網路</text><rect class="b-plain" x="628" y="244" width="316" height="58" rx="4"/><text class="sv" x="640" y="268">ROS_DOMAIN_ID = 0</text><text class="sv" x="640" y="287">RMW = rmw_fastrtps_cpp</text><line class="l-ink dash" x1="600" y1="273" x2="628" y2="273"/><line class="l-dds" x1="60" y1="302" x2="60" y2="319" marker-end="url(#wd-dds)"/><rect class="b-kit" x="20" y="320" width="580" height="58" rx="4"/><text class="st" x="30" y="338">⑤ ROS2SubscribeTwist</text><text class="ss" x="30" y="354">OnPlaybackTick 觸發時取出最新一筆訊息</text><text class="ss" x="30" y="369">outputs: linearVelocity, angularVelocity（vector3d）</text><text class="tg" x="592" y="335" text-anchor="end">Kit 行程 · OmniGraph</text><rect class="b-plain" x="628" y="320" width="316" height="58" rx="4"/><text class="sv" x="640" y="344">linearVelocity  = (0.30, 0, 0)</text><text class="sv" x="640" y="363">angularVelocity = (0, 0, 0.30)</text><line class="l-ink dash" x1="600" y1="349" x2="628" y2="349"/><line class="l-kit" x1="60" y1="378" x2="60" y2="395" marker-end="url(#wd-kit)"/><rect class="b-kit" x="20" y="396" width="580" height="58" rx="4"/><text class="st" x="30" y="414">⑥ BreakVector3 ×2</text><text class="ss" x="30" y="430">只取 linear.x 與 angular.z</text><text class="ss" x="30" y="445">（差速車只有這兩個自由度）</text><text class="tg" x="592" y="411" text-anchor="end">Kit 行程 · OmniGraph</text><rect class="b-plain" x="628" y="396" width="316" height="58" rx="4"/><text class="sv" x="640" y="420">v = 0.30 m/s</text><text class="sv" x="640" y="439">ω = 0.30 rad/s</text><line class="l-ink dash" x1="600" y1="425" x2="628" y2="425"/><line class="l-kit" x1="60" y1="454" x2="60" y2="471" marker-end="url(#wd-kit)"/><rect class="b-kit" x="20" y="472" width="580" height="58" rx="4"/><text class="st" x="30" y="490">⑦ DifferentialController</text><text class="ss" x="30" y="506">wheelRadius r = 0.10 · wheelDistance L = 0.44</text><text class="ss" x="30" y="521">ωL = (v − ω·L/2)/r ，ωR = (v + ω·L/2)/r</text><text class="tg" x="592" y="487" text-anchor="end">Kit 行程 · OmniGraph</text><rect class="b-plain" x="628" y="472" width="316" height="58" rx="4"/><text class="sv" x="640" y="496">ωL = (0.30−0.066)/0.1 = 2.34 rad/s</text><text class="sv" x="640" y="515">ωR = (0.30+0.066)/0.1 = 3.66 rad/s</text><line class="l-ink dash" x1="600" y1="501" x2="628" y2="501"/><line class="l-kit" x1="60" y1="530" x2="60" y2="547" marker-end="url(#wd-kit)"/><rect class="b-kit" x="20" y="548" width="580" height="58" rx="4"/><text class="st" x="30" y="566">⑧ IsaacArticulationController</text><text class="ss" x="30" y="582">targetPrim=/World/amr · jointNames=[left, right]</text><text class="ss" x="30" y="597">直接寫進 PhysX articulation（不是寫 USD 屬性）</text><text class="tg" x="592" y="563" text-anchor="end">Kit 行程 · OmniGraph</text><rect class="b-plain" x="628" y="548" width="316" height="58" rx="4"/><text class="sv" x="640" y="572">left_wheel_joint  → 2.34 rad/s</text><text class="sv" x="640" y="591">right_wheel_joint → 3.66 rad/s</text><line class="l-ink dash" x1="600" y1="577" x2="628" y2="577"/><line class="l-kit" x1="60" y1="606" x2="60" y2="623" marker-end="url(#wd-kit)"/><rect class="b-kit" x="20" y="624" width="580" height="58" rx="4"/><text class="st" x="30" y="642">⑨ PhysX velocity drive（TGS, 60 Hz）</text><text class="ss" x="30" y="658">τ = damping·(ω目標 − ω實際)，上限 maxForce=1000</text><text class="ss" x="30" y="673">橡膠輪 × 水泥地摩擦 → 底盤移動（腳輪無摩擦）</text><text class="tg" x="592" y="639" text-anchor="end">Kit 行程 · PhysX</text><rect class="b-plain" x="628" y="624" width="316" height="58" rx="4"/><text class="sv" x="640" y="648">左輪 0.234 m/s · 右輪 0.366 m/s</text><text class="sv" x="640" y="667">轉彎半徑 R = v/ω = 1.0 m（左轉）</text><line class="l-ink dash" x1="600" y1="653" x2="628" y2="653"/><line class="l-kit" x1="60" y1="682" x2="60" y2="699" marker-end="url(#wd-kit)"/><rect class="b-dds" x="20" y="700" width="580" height="58" rx="4"/><text class="st" x="30" y="718">⑩ IsaacComputeOdometry → /odom · /tf</text><text class="ss" x="30" y="734">RTX Lidar → /scan · Camera → /rgb /depth</text><text class="ss" x="30" y="749">patrol.py / topic_monitor.py 訂閱這些 topic</text><text class="tg" x="592" y="715" text-anchor="end">回饋 → DDS → client</text><rect class="b-plain" x="628" y="700" width="316" height="58" rx="4"/><text class="sv" x="640" y="724">/odom twist ≈ (0.30, 0.30)</text><text class="sv" x="640" y="743">/tf odom→base_link 持續更新</text><line class="l-ink dash" x1="600" y1="729" x2="628" y2="729"/></svg></div>
+    <figcaption><b>往返路徑：</b>①–④ 在 client 行程和網路上，⑤–⑨ 在 Kit 行程內（C++），⑩ 由 Kit 發佈，再經 DDS 回到任何訂閱者。
+    <code>--self-test</code> 的 phase 2 就是在自動驗證這整條鏈：送 0.5 m/s，檢查 <code>/odom</code> 走的距離在預期的 80–120% 之間。</figcaption>
+  </figure>
+
+  <div class="demo" id="demo" tabindex="0" aria-label="WASD 互動示範，聚焦後可用鍵盤操作">
+    <div class="demo-head"><b>互動示範：用跟 teleop_key.py 一樣的規則算一遍</b><span>點一下這個框再按 W A S D / 空白鍵，或直接點按鈕</span></div>
+    <div class="demo-grid">
+      <div>
+        <div class="pad">
+          <button type="button" class="w" data-k="w">W</button>
+          <button type="button" class="a" data-k="a">A</button>
+          <button type="button" class="s" data-k="s">S</button>
+          <button type="button" class="d" data-k="d">D</button>
+          <button type="button" class="sp" data-k=" ">SPACE 停止</button>
+        </div>
+        <div class="readout" aria-live="polite">
+          <div><span>② linear.x</span><span id="r-v">+0.00 m/s</span></div>
+          <div><span>② angular.z</span><span id="r-w">+0.00 rad/s</span></div>
+          <div><span>⑦ ωL 左輪</span><span id="r-l">+0.00 rad/s</span></div>
+          <div><span>⑦ ωR 右輪</span><span id="r-r">+0.00 rad/s</span></div>
+          <div><span>⑨ 轉彎半徑 R</span><span id="r-R">∞</span></div>
+          <div><span>⑩ /odom 位置</span><span id="r-p">(-7.00, 0.00)</span></div>
+        </div>
+      </div>
+      <div class="arena">
+        <svg viewBox="-11 -7 22 14" aria-label="俯視圖：20×12 m 走道">
+          <g transform="scale(1,-1)">
+            <g id="gridlines"></g>
+            <rect class="wall" x="-10" y="-6" width="20" height="12"/>
+            <polyline id="trail" class="trail" points=""/>
+            <g id="bot">
+              <rect class="body" x="-0.35" y="-0.225" width="0.7" height="0.45" rx="0.05"/>
+              <polygon class="nose" points="0.35,-0.14 0.6,0 0.35,0.14"/>
+            </g>
+          </g>
+        </svg>
+        <small>理想運動學（不含打滑）。起點 (ROBOT_START_X, ROBOT_START_Y) = (−7, 0)，四周牆面 ±10 × ±6 m。每按一次鍵會「累加並保持」，就像真的 teleop：不是按住才動。</small>
+      </div>
+    </div>
+  </div>
+
+  <h3>容易踩到的細節</h3>
+  <ul>
+    <li><b>是狀態，不是按住。</b>按一次 <kbd>W</kbd> 就加 0.15 m/s 並一直保持，所以要按 <kbd>SPACE</kbd> 才會停。</li>
+    <li><b>速度會被限制兩次。</b>teleop 先用 <code>MAX_LINEAR_SPEED / MAX_ANGULAR_SPEED</code> 限制一次，<code>DifferentialController</code> 的 <code>maxLinearSpeed / maxAngularSpeed</code> 再限制一次。</li>
+    <li><b>graph 裡沒有 cmd_vel 逾時機制。</b><code>ROS2SubscribeTwist</code> 保留的是最後一筆值。teleop 正常結束時 <code>finally</code> 會送出 0；但如果 client 被強制終止，機器人會照最後的速度繼續走。實體機器人都有 watchdog，做 digital twin 時建議在 graph 或 client 端補上。</li>
+    <li><b>輪速目標寫進 PhysX，不寫進 USD。</b>在 Property 面板看 <code>left_wheel_joint</code> 的 Drive targetVelocity 不一定會變。要讀即時狀態，請用 <code>Articulation.get_joint_velocities()</code> 或 <code>/joint_states</code>。</li>
+    <li><b>非 Windows 的 teleop</b> 會退回 <code>sys.stdin.read(1)</code>，終端機有行緩衝，所以要按 Enter，而且讀取時會阻塞。</li>
+  </ul>
+</section>
+
+<!-- =============================================================== -->
+<section id="entry">
+  <h2><span class="num">08</span>其他啟動方式的差異</h2>
+  <p class="deck">每種方式最後都得到同一個 stage 和同一個 graph，差別在誰啟動 Kit、誰推進時間。</p>
+  <div class="tw"><table>
+    <thead><tr><th>方式</th><th>誰啟動 Kit</th><th>誰推進時間</th><th>ROS 2</th><th>適合</th></tr></thead>
+    <tbody>
+      <tr><td><code>run\sim.cmd</code></td><td><code>SimulationApp()</code></td><td>Python 迴圈 <code>step()</code></td><td>✔ 自動 play</td><td>日常開發、CI（<code>--self-test</code>、<code>--headless</code>）</td></tr>
+      <tr><td>GUI + <code>gui.build()</code></td><td><code>isaac-sim.bat</code>（會自動跑 setup_ros_env.bat）</td><td>GUI timeline（按 ▶）</td><td>✔ 按 ▶ 後出現</td><td>一邊看 stage / Action Graph 一邊調參數</td></tr>
+      <tr><td><code>run\scene.cmd</code></td><td><code>SimulationApp()</code></td><td>Python 迴圈，依模擬時間計時</td><td>✘</td><td>學 USD / 物理；<code>--save</code> 匯出 USD</td></tr>
+      <tr><td><code>run\dataset.cmd</code></td><td><code>SimulationApp(headless)</code></td><td><code>rep.orchestrator.step()</code></td><td>✘</td><td>合成訓練資料（沒有 physics 時鐘，以畫質為主）</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note kit"><p><strong>GUI 模式在程式上的差異</strong>（<code>warehouse_amr/gui.py</code>）：Kit 已經在跑，不能再建立 <code>SimulationApp</code>，也不能呼叫 <code>update()</code>。
+  所以 <code>build()</code> 用 <code>asyncio.ensure_future</code> 把 <code>build_async()</code> 排進 Kit 的事件迴圈，每步之間 <code>await app.next_update_async()</code>。
+  它也不建立 <code>SimulationContext</code>，物理頻率由 <code>PhysicsScene.timeStepsPerSecond</code> 決定。<code>[gui]</code> 訊息與例外會出現在 Console，不在 Script Editor 的輸出窗格。</p></div>
+</section>
+
+<!-- =============================================================== -->
+<section id="twin">
+  <h2><span class="num">09</span>往 digital twin 發展：要改哪裡</h2>
+  <p class="deck">這個 repo 目前是「sim 當作機器人」。digital twin 還需要反方向，也就是讓真實世界的狀態進到 sim。下圖是建議架構，灰字標示 repo 裡還沒有的部分。</p>
+  <figure>
+    <div class="fig-scroll">
+    <svg viewBox="0 0 960 430" role="img" aria-labelledby="tw-t">
+      <title id="tw-t">digital twin 建議架構</title>
+      <defs>
+        <marker id="tw-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="tw-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="tw-dds" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dds" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="b-plain strong" x="180" y="14" width="600" height="58" rx="4"/>
+      <text class="st" x="194" y="36">應用層：Nav2 · patrol.py · 監控儀表板 · MES / WMS 串接</text>
+      <text class="ss" x="194" y="56">只依賴 ROS 2 介面（/cmd_vel /odom /tf /scan …），不知道對面是真機還是 sim</text>
+
+      <rect class="b-cl" x="20" y="130" width="300" height="200" rx="4"/>
+      <text class="big" x="34" y="156">實體 AMR</text>
+      <text class="ss" x="34" y="182">馬達驅動 firmware  ← /real/cmd_vel</text>
+      <text class="ss" x="34" y="204">輪速計 / 定位      → /real/odom</text>
+      <text class="ss" x="34" y="226">                     /real/joint_states</text>
+      <text class="ss" x="34" y="248">實體 LiDAR          → /real/scan</text>
+      <text class="ss" x="34" y="270">相機                → /real/rgb</text>
+      <text class="ss" x="34" y="306">cmd_vel watchdog（逾時就停）</text>
+
+      <rect class="b-kit" x="640" y="130" width="300" height="200" rx="4"/>
+      <text class="big" x="654" y="156">Isaac Sim 數位分身（本 repo）</text>
+      <text class="ss" x="654" y="182">ROS2SubscribeTwist   ← /sim/cmd_vel</text>
+      <text class="ss" x="654" y="204">ComputeOdometry      → /sim/odom</text>
+      <text class="ss" x="654" y="226">RTX Lidar            → /sim/scan</text>
+      <text class="ss" x="654" y="248">Camera               → /sim/rgb</text>
+      <text class="ss" x="654" y="270">Replicator           → 訓練資料</text>
+      <text class="ss" x="654" y="306">ROS_NAMESPACE=sim（.env）</text>
+
+      <rect class="b-dds" x="360" y="140" width="240" height="56" rx="4"/>
+      <text class="st" x="374" y="162">DDS（同一個 domain）</text>
+      <text class="ss" x="374" y="182">用 namespace 區分 real / sim</text>
+
+      <rect class="b-py dashb" x="360" y="232" width="240" height="98" rx="4"/>
+      <text class="st" x="374" y="254">狀態同步節點（需新增）</text>
+      <text class="ss" x="374" y="276">訂閱 /real/joint_states、/real/odom</text>
+      <text class="ss" x="374" y="296">→ 寫入 sim 的 joint / 底盤位姿</text>
+      <text class="ss" x="374" y="316">（影子模式：sim 跟著真機動）</text>
+
+      <line class="l-ink" x1="330" y1="80" x2="220" y2="128" marker-start="url(#tw-ink)" marker-end="url(#tw-ink)"/>
+      <line class="l-ink" x1="630" y1="80" x2="740" y2="128" marker-start="url(#tw-ink)" marker-end="url(#tw-ink)"/>
+      <line class="l-dds" x1="322" y1="168" x2="358" y2="168" marker-start="url(#tw-dds)" marker-end="url(#tw-dds)"/>
+      <line class="l-dds" x1="602" y1="168" x2="638" y2="168" marker-start="url(#tw-dds)" marker-end="url(#tw-dds)"/>
+      <line class="l-acc" x1="322" y1="280" x2="358" y2="280" marker-end="url(#tw-acc)"/>
+      <line class="l-acc" x1="602" y1="280" x2="638" y2="280" marker-end="url(#tw-acc)"/>
+
+      <text class="ss" x="20" y="370">兩種運作模式：</text>
+      <text class="ss" x="20" y="392">A. 模擬先行（sim → real）：應用層先對 /sim/* 開發與測試，確認沒問題後把 namespace 換成 /real/*，程式不用改。</text>
+      <text class="ss" x="20" y="414">B. 影子模式（real → sim）：同步節點把真機狀態寫進 sim，用 sim 做視覺化、碰撞預測或產生感測資料。</text>
+    </svg>
+    </div>
+    <figcaption>模式 A 是這個 repo 的設計目的：client 分不出對面是 sim 還是真機。模式 B 需要新增同步節點，而且那一側的 sim 不能再由 <code>DifferentialController</code> 驅動，否則兩個來源會互相打架。</figcaption>
+  </figure>
+
+  <h3>常見需求 → 要改的地方</h3>
+  <div class="tw"><table>
+    <thead><tr><th>需求</th><th>改哪裡</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td>換成實際廠區（CAD / USD）</td><td><code>scene/warehouse.py</code>：參考 <code>_load_full_warehouse()</code> 的做法，用 <code>reference_asset()</code> 載入</td><td>一定要 <code>asset_scale_to_meters()</code>（cm 與 m 差 100 倍）和 <code>add_colliders_recursive()</code>，否則雷達看得到牆，車卻會直接穿過去。</td></tr>
+      <tr><td>換成真的機器人模型</td><td>用 URDF importer 或官方 USD 取代 <code>build_amr()</code>，回傳同樣的 <code>RobotPaths</code></td><td><code>ros_graph.py</code> 的 <code>jointNames</code>、<code>chassisPrim</code>、<code>targetPrims</code>，以及 <code>.env</code> 的 <code>WHEEL_RADIUS / WHEEL_BASE</code>，都要跟新模型一致。可以用 <code>--self-test</code> 的 80–120% 檢查來驗證。</td></tr>
+      <tr><td>新增一個 topic</td><td><code>ros_graph.py</code>：在 <code>CREATE_NODES</code>、<code>SET_VALUES</code>、<code>CONNECT</code> 三處都要加（context、tick、timeStamp）</td><td>同時把它加進 <code>expected_topics()</code>，self-test 才會檢查。topicName 要寫相對名稱（不要以 <code>/</code> 開頭）。</td></tr>
+      <tr><td>新增感測器</td><td><code>sensors.py</code>：建 prim 加 render product，再到 graph 加 Helper 節點</td><td>frame id 要等於 mount prim 的名稱，並把該 prim 加進 <code>PublishTF.targetPrims</code>。</td></tr>
+      <tr><td>真機狀態驅動 sim（影子模式）</td><td>新增 graph 分支：<code>ROS2SubscribeJointState</code> 接 <code>ArticulationController</code>（位置或速度模式），或者寫一個 Python physics callback，用 <code>set_world_poses</code> 設定底盤位姿</td><td>要關掉原本的 <code>/cmd_vel</code> 路徑；時間戳要處理真機與 sim 的時鐘差。</td></tr>
+      <tr><td>多台機器人</td><td>把 <code>build_amr(root_path=…)</code> 和 <code>build_ros2_graph</code> 參數化（graph 路徑、namespace 各一份）</td><td>目前 <code>GRAPH_PATH</code> 是常數，<code>/tf</code> 也會帶 namespace，需要自行決定 TF 的前綴策略。</td></tr>
+      <tr><td>接 Nav2</td><td>在 WSL2 或另一台機器啟動 Nav2，使用同一個 <code>ROS_DOMAIN_ID</code></td><td>介面已經齊全（<code>/scan /odom /tf /cmd_vel /clock</code>）。記得設 <code>use_sim_time:=true</code>，並加上相機 optical frame 的靜態 TF。</td></tr>
+      <tr><td>在 sim 裡跑自訂 Python 邏輯</td><td><code>simulation_context.add_physics_callback()</code>，或是寫在 <code>02</code> 的主迴圈</td><td>讀狀態要用 <code>isaacsim.core.prims.Articulation</code> / <code>RigidPrim</code>，不要讀 USD transform。</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- =============================================================== -->
+<section id="rules">
+  <h2><span class="num">10</span>必守規則（違反時多半是靜默失敗）</h2>
+  <ul class="rules">
+    <li><b>先 <code>SimulationApp()</code>，再 import omni / pxr / isaacsim。</b>這些模組是 Kit 提供的。</li>
+    <li><b>先設定 ROS 2 環境，再啟用 bridge。</b>否則 publisher 不會報錯，但也不會送出任何資料。</li>
+    <li><b>沒有 play 就沒有 topic。</b>timeline 停止時，DDS 上完全看不到這個 sim。</li>
+    <li><b>讀物理狀態用 tensor API（或 /odom），不要讀 USD。</b>播放時，物理結果寫在 Fabric 裡，USD 上的 transform 可能是舊的。</li>
+    <li><b>輪子 joint 不要設定 limit；輪子形狀用 capsule，不要用 cylinder。</b>前者會把 joint 鎖死，後者會讓輪子陷進地板。這兩種情況下，上游訊號看起來都完全正常。</li>
+    <li><b><code>.env</code> 的輪徑、輪距要跟模型一致。</b>不一致時 <code>/odom</code> 跟實際移動會有落差，self-test 會回報 FAIL。</li>
+    <li><b>frame id 等於 prim 名稱。</b>改了 prim 名稱，就要一起改 <code>frameId</code>。</li>
+    <li><b>DDS domain 只看 <code>.env</code>。</b><code>useDomainIDEnvVar=False</code>，client 也用 <code>rclpy.init(domain_id=…)</code>，所以 shell 裡的 <code>ROS_DOMAIN_ID</code> 不會生效。</li>
+  </ul>
+</section>
+
+<footer>
+  <p>產生自本 repo 的原始碼：<code>scripts/</code>、<code>warehouse_amr/</code>、<code>ros2_client/</code>、<code>run/</code>。英文版圖解請見 <a href="index.html">docs/index.html</a>，細節請見 <code>docs/01–04_*.md</code>。</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  // ---- theme toggle -------------------------------------------------------
+  var root = document.documentElement;
+  var KEY = "amr-flow-theme";
+  try { var saved = localStorage.getItem(KEY); if (saved) root.setAttribute("data-theme", saved); } catch (e) {}
+  document.getElementById("themer").addEventListener("click", function () {
+    var dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+
+  // ---- WASD demo: same rules as ros2_client/teleop_key.py -------------------
+  var R = 0.10, L = 0.44, VMAX = 1.0, WMAX = 1.5, SL = 0.15, SA = 0.3;
+  var v = 0, w = 0, x = -7, y = 0, th = 0, trail = [];
+  var demo = document.getElementById("demo");
+  var $ = function (id) { return document.getElementById(id); };
+  var grid = $("gridlines"), gs = "";
+  for (var gx = -8; gx <= 8; gx += 2) gs += '<line class="grid" x1="' + gx + '" y1="-6" x2="' + gx + '" y2="6"/>';
+  for (var gy = -4; gy <= 4; gy += 2) gs += '<line class="grid" x1="-10" y1="' + gy + '" x2="10" y2="' + gy + '"/>';
+  grid.innerHTML = gs;
+
+  function clamp(a, lo, hi) { return Math.max(lo, Math.min(hi, a)); }
+  function sgn(n, d) { return (n >= 0 ? "+" : "") + n.toFixed(d); }
+  function key(k) {
+    if (k === "w") v = clamp(v + SL, -VMAX, VMAX);
+    else if (k === "s") v = clamp(v - SL, -VMAX, VMAX);
+    else if (k === "a") w = clamp(w + SA, -WMAX, WMAX);
+    else if (k === "d") w = clamp(w - SA, -WMAX, WMAX);
+    else if (k === " ") { v = 0; w = 0; }
+    else return false;
+    v = Math.round(v * 100) / 100; w = Math.round(w * 100) / 100;
+    var b = demo.querySelector('[data-k="' + k + '"]');
+    if (b) { b.classList.add("hit"); setTimeout(function () { b.classList.remove("hit"); }, 130); }
+    render();
+    return true;
+  }
+  function render() {
+    var wl = (v - w * L / 2) / R, wr = (v + w * L / 2) / R;
+    $("r-v").textContent = sgn(v, 2) + " m/s";
+    $("r-w").textContent = sgn(w, 2) + " rad/s";
+    $("r-l").textContent = sgn(wl, 2) + " rad/s";
+    $("r-r").textContent = sgn(wr, 2) + " rad/s";
+    $("r-R").textContent = Math.abs(w) < 1e-9 ? "∞（直線）" : (Math.abs(v) < 1e-9 ? "0（原地轉）" : (v / w).toFixed(2) + " m");
+    $("r-p").textContent = "(" + x.toFixed(2) + ", " + y.toFixed(2) + ")";
+  }
+  demo.addEventListener("click", function (ev) {
+    var k = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-k");
+    if (k !== null && k !== undefined) key(k);
+  });
+  demo.addEventListener("keydown", function (ev) {
+    if (ev.target && ev.target.tagName === "BUTTON" && (ev.key === " " || ev.key === "Enter")) return;
+    if (key(ev.key.toLowerCase())) ev.preventDefault();
+  });
+
+  // ideal unicycle integration at the graph rate (~30 Hz)
+  var bot = $("bot"), tr = $("trail"), last = null;
+  function tick(ts) {
+    if (last === null) last = ts;
+    var dt = Math.min(0.1, (ts - last) / 1000); last = ts;
+    if (v !== 0 || w !== 0) {
+      th += w * dt;
+      var nx = x + v * Math.cos(th) * dt, ny = y + v * Math.sin(th) * dt;
+      x = clamp(nx, -9.6, 9.6); y = clamp(ny, -5.6, 5.6);
+      trail.push(x.toFixed(2) + "," + y.toFixed(2));
+      if (trail.length > 900) trail.shift();
+      tr.setAttribute("points", trail.join(" "));
+      render();
+    }
+    bot.setAttribute("transform", "translate(" + x + " " + y + ") rotate(" + (th * 180 / Math.PI) + ")");
+    requestAnimationFrame(tick);
+  }
+  render();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

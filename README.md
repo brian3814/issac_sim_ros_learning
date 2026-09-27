@@ -351,6 +351,8 @@ docs/                      markdown docs + an illustrated index.html
 - **[`docs/index.html`](docs/index.html) — the illustrated version.** Open it in a browser:
   architecture, control-flow, sensor and TF diagrams, plus the measured results. Single
   self-contained file, no dependencies, light and dark themes.
+- **[`docs/code_flow.zh-TW.html`](docs/code_flow.zh-TW.html) — 繁體中文運作原理圖解**：執行範圍（哪些在 Omniverse 裡跑）、
+  啟動順序、OmniGraph 接線、WASD 訊號流（含互動示範）、digital twin 開發指南。
 - [`docs/01_architecture.md`](docs/01_architecture.md) — how the layers fit, and the ideas worth understanding before editing
 - [`docs/02_running.md`](docs/02_running.md) — every command, every `.env` knob
 - [`docs/03_troubleshooting.md`](docs/03_troubleshooting.md) — the failures this project actually hit, with measurements
