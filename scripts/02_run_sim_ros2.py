@@ -13,6 +13,9 @@ Useful flags:
     --self-test        check every topic is advertised, then drive the robot
                        and confirm odometry and /scan respond. Writes
                        _output/self_test_report.txt; exits non-zero on failure.
+
+/cmd_vel is handled by warehouse_amr/base_controller.py, not by the graph: it
+stops the robot when commands stop arriving (CMD_VEL_TIMEOUT in .env).
 """
 
 from __future__ import annotations
@@ -64,6 +67,7 @@ def main():
     import omni.usd  # noqa: E402
     from isaacsim.core.api import SimulationContext  # noqa: E402
 
+    from warehouse_amr.base_controller import BaseController  # noqa: E402
     from warehouse_amr.ros_graph import build_ros2_graph, expected_topics  # noqa: E402
     from warehouse_amr.scene.robot import build_amr  # noqa: E402
     from warehouse_amr.scene.warehouse import build_warehouse  # noqa: E402
@@ -84,7 +88,9 @@ def main():
     simulation_app.update()
 
     print("[run] wiring ROS 2 graph ...")
-    build_ros2_graph(cfg, robot, sensors)
+    # The graph publishes state; the wheels belong to BaseController, which
+    # adds the command timeout the graph's /cmd_vel chain does not have.
+    build_ros2_graph(cfg, robot, sensors, drive_from_graph=False)
     simulation_app.update()
 
     # physics_dt must agree with the PhysicsScene's timeStepsPerSecond, which
@@ -104,38 +110,45 @@ def main():
     for t in expected_topics(cfg):
         print("        " + t)
 
+    # Simulation time, not wall time -- see BaseController.__init__.
+    controller = BaseController(cfg, robot, clock=lambda: simulation_context.current_time)
+    controller.start()
+
+    def step():
+        """One simulation step with the base controller in the loop."""
+        controller.step()
+        simulation_context.step(render=True)
+
     if args.self_test:
-        return _self_test(simulation_app, simulation_context, cfg, bridge_ok)
+        return _self_test(simulation_app, simulation_context, cfg, bridge_ok, controller, step)
 
     start = time.time()
     try:
         while simulation_app.is_running():
-            simulation_context.step(render=True)
+            step()
             if args.duration and (time.time() - start) >= args.duration:
                 break
     except KeyboardInterrupt:
         print("\n[run] interrupted")
 
+    controller.shutdown()
     simulation_context.stop()
     app.shutdown(simulation_app, 0)   # does not return
 
 
-def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool):
+def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool, controller, step):
     """Spin the sim, then ask ROS 2 what it can actually see."""
-    # The bundled rclpy lives beside the bridge's DLLs, which app.launch()
-    # already put on PATH; it just is not on sys.path yet.
-    if str(cfg.ros2_rclpy_dir) not in sys.path:
-        sys.path.insert(0, str(cfg.ros2_rclpy_dir))
-    import rclpy
+    # BaseController.start() already imported and initialised the bundled
+    # rclpy in this process; the test node shares that context.
+    rclpy = controller.rclpy
 
     from warehouse_amr.ros_graph import expected_topics
 
     warmup_frames = 240
     print("[self-test] stepping %d frames to warm up renderers ..." % warmup_frames)
     for _ in range(warmup_frames):
-        simulation_context.step(render=True)
+        step()
 
-    rclpy.init(domain_id=cfg.ros_domain_id)
     node = rclpy.create_node("warehouse_amr_self_test")
 
     # Discovery is not instantaneous; keep stepping the sim while we wait so
@@ -145,7 +158,7 @@ def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool):
     wanted = set(expected_topics(cfg))
     while time.time() < deadline:
         for _ in range(10):
-            simulation_context.step(render=True)
+            step()
         rclpy.spin_once(node, timeout_sec=0.05)
         for name, types in node.get_topic_names_and_types():
             seen[name] = types
@@ -165,7 +178,16 @@ def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool):
     # Advertised topics prove the graph was built. They do not prove a Twist
     # reaches PhysX or that the lidar sees anything, so drive the robot and
     # watch odometry and /scan respond.
-    drive_ok, drive_lines = _drive_test(rclpy, node, cfg, simulation_context)
+    from geometry_msgs.msg import Twist
+    from nav_msgs.msg import Odometry
+    from sensor_msgs.msg import LaserScan
+
+    state = {"odom": None, "scan": None}
+    node.create_subscription(Odometry, cfg.topic("odom"), lambda m: state.update(odom=m), 10)
+    node.create_subscription(LaserScan, cfg.topic("scan"), lambda m: state.update(scan=m), 10)
+    pub = node.create_publisher(Twist, cfg.topic("cmd_vel"), 10)
+
+    drive_ok, drive_lines = _drive_test(rclpy, node, cfg, simulation_context, step, state, pub)
     report.append("")
     report.append("---- phase 2: closed-loop drive ----")
     report.extend(drive_lines)
@@ -175,7 +197,7 @@ def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool):
     report.append("RESULT         : %s" % ("PASS" if passed else "FAIL"))
 
     node.destroy_node()
-    rclpy.shutdown()
+    controller.shutdown()
 
     text = "\n".join(report)
     print("\n[self-test] " + text.replace("\n", "\n[self-test] "))
@@ -186,25 +208,18 @@ def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool):
     app.shutdown(simulation_app, 0 if passed else 1)   # does not return
 
 
-def _drive_test(rclpy, node, cfg, simulation_context):
+def _drive_test(rclpy, node, cfg, simulation_context, step, state, pub):
     """Publish /cmd_vel, then check odometry and lidar respond.
 
     This is the test that matters. It exercises the full round trip:
-    Twist -> DDS -> ROS2SubscribeTwist -> DifferentialController ->
-    ArticulationController -> PhysX -> IsaacComputeOdometry -> Odometry -> DDS.
+    Twist -> DDS -> BaseController (watchdog, differential drive) ->
+    articulation targets -> PhysX -> IsaacComputeOdometry -> Odometry -> DDS.
     """
     from geometry_msgs.msg import Twist
-    from nav_msgs.msg import Odometry
-    from sensor_msgs.msg import LaserScan
-
-    state = {"odom": None, "scan": None}
-    node.create_subscription(Odometry, cfg.topic("odom"), lambda m: state.update(odom=m), 10)
-    node.create_subscription(LaserScan, cfg.topic("scan"), lambda m: state.update(scan=m), 10)
-    pub = node.create_publisher(Twist, cfg.topic("cmd_vel"), 10)
 
     # Let subscriptions match publishers before measuring anything.
     for _ in range(60):
-        simulation_context.step(render=True)
+        step()
         rclpy.spin_once(node, timeout_sec=0.01)
 
     start_odom = state["odom"]
@@ -221,7 +236,7 @@ def _drive_test(rclpy, node, cfg, simulation_context):
     cmd.linear.x = speed
     for _ in range(360):
         pub.publish(cmd)
-        simulation_context.step(render=True)
+        step()
         rclpy.spin_once(node, timeout_sec=0.005)
 
     t_end = simulation_context.current_time
@@ -229,7 +244,7 @@ def _drive_test(rclpy, node, cfg, simulation_context):
     cmd.linear.x = 0.0
     for _ in range(30):
         pub.publish(cmd)
-        simulation_context.step(render=True)
+        step()
         rclpy.spin_once(node, timeout_sec=0.005)
 
     end_odom = state["odom"]
