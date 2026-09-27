@@ -10,8 +10,9 @@ Leave it running, then in a second terminal drive the robot:
 Useful flags:
     --duration 30      stop after N seconds (0 = run until closed)
     --headless         no window, for CI or a slow GPU
-    --self-test        check every topic is advertised, then drive the robot
-                       and confirm odometry and /scan respond. Writes
+    --self-test        check every topic is advertised, drive the robot and
+                       confirm odometry and /scan respond, then cut /cmd_vel
+                       mid-drive and confirm the watchdog stops it. Writes
                        _output/self_test_report.txt; exits non-zero on failure.
 
 /cmd_vel is handled by warehouse_amr/base_controller.py, not by the graph: it
@@ -192,7 +193,13 @@ def _self_test(simulation_app, simulation_context, cfg, bridge_ok: bool, control
     report.append("---- phase 2: closed-loop drive ----")
     report.extend(drive_lines)
 
-    passed = (not missing) and bridge_ok and drive_ok
+    # ---- phase 3: does the robot stop when the commands stop? -----------
+    wd_ok, wd_lines = _watchdog_test(rclpy, node, cfg, simulation_context, step, state, pub, controller)
+    report.append("")
+    report.append("---- phase 3: cmd_vel watchdog ----")
+    report.extend(wd_lines)
+
+    passed = (not missing) and bridge_ok and drive_ok and wd_ok
     report.append("")
     report.append("RESULT         : %s" % ("PASS" if passed else "FAIL"))
 
@@ -297,6 +304,70 @@ def _drive_test(rclpy, node, cfg, simulation_context, step, state, pub):
         else:
             lines.append("   -> OK: closest return %.2f m" % min(finite))
 
+    return ok, lines
+
+
+def _watchdog_test(rclpy, node, cfg, simulation_context, step, state, pub, controller):
+    """Drive, then go silent -- no zero command, just nothing -- and check the robot stops.
+
+    This is the failure a crashed or killed client produces, and the one a
+    clean Ctrl+C never shows (both clients publish a zero on the way out).
+    It drives in *reverse*, back along the path phase 2 has just proven clear,
+    so a pallet cannot be what stops it.
+    """
+    import math
+
+    from geometry_msgs.msg import Twist
+
+    speed = -0.5
+    timeout = cfg.cmd_vel_timeout
+    cmd = Twist()
+    cmd.linear.x = speed
+
+    t0 = simulation_context.current_time
+    while simulation_context.current_time - t0 < 1.5:
+        pub.publish(cmd)
+        step()
+        rclpy.spin_once(node, timeout_sec=0.005)
+
+    cut = state["odom"]
+    trips_before = controller.watchdog.trips
+    t_cut = simulation_context.current_time
+    # Silence. Keep stepping the sim and reading odometry, but publish nothing.
+    while simulation_context.current_time - t_cut < timeout + 1.5:
+        step()
+        rclpy.spin_once(node, timeout_sec=0.005)
+    end = state["odom"]
+
+    lines = []
+    if cut is None or end is None:
+        return False, ["   odom          : NO MESSAGES RECEIVED"]
+
+    v_cut = abs(cut.twist.twist.linear.x)
+    v_end = abs(end.twist.twist.linear.x)
+    p0, p1 = cut.pose.pose.position, end.pose.pose.position
+    coast = math.hypot(p1.x - p0.x, p1.y - p0.y)
+    # At most `timeout` seconds at full speed before the watchdog acts, plus
+    # a margin for braking and one frame of message latency.
+    allowed = abs(speed) * timeout + 0.25
+    tripped = controller.watchdog.trips > trips_before
+
+    lines.append("   timeout       : %.2f s (CMD_VEL_TIMEOUT)" % timeout)
+    lines.append("   speed at cut  : %.2f m/s" % v_cut)
+    lines.append("   after silence : %.3f m/s, coasted %.3f m (allowed %.3f m)" % (v_end, coast, allowed))
+    lines.append("   watchdog trip : %s" % ("yes" if tripped else "NO"))
+    ok = True
+    if v_cut < 0.25:
+        lines.append("   -> FAIL: robot was not moving before the cut; test inconclusive")
+        ok = False
+    elif not tripped or v_end > 0.05:
+        lines.append("   -> FAIL: robot kept moving after /cmd_vel went silent")
+        ok = False
+    elif coast > allowed:
+        lines.append("   -> FAIL: stopped, but only after %.2f m" % coast)
+        ok = False
+    else:
+        lines.append("   -> OK: silence stopped the robot")
     return ok, lines
 
 
