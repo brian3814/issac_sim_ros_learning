@@ -82,6 +82,7 @@ class Config:
     ros_domain_id: int
     rmw_implementation: str
     ros_namespace: str
+    cmd_vel_timeout: float
     # simulation
     headless: bool
     physics_hz: int
@@ -150,6 +151,7 @@ def load_config() -> Config:
         ros_domain_id=env.int("ROS_DOMAIN_ID", 0),
         rmw_implementation=env.str("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp"),
         ros_namespace=env.str("ROS_NAMESPACE", ""),
+        cmd_vel_timeout=env.float("CMD_VEL_TIMEOUT", 0.5),
         headless=env.bool("HEADLESS", False),
         physics_hz=env.int("PHYSICS_HZ", 60),
         render_hz=env.int("RENDER_HZ", 30),
@@ -209,7 +211,8 @@ def describe(cfg: Config) -> str:
             " usd assets    : " + str(cfg.usd_assets_root),
             " ros 2         : " + cfg.ros_distro + " (bundled)  domain=" + str(cfg.ros_domain_id)
             + "  rmw=" + cfg.rmw_implementation,
-            " namespace     : " + (cfg.ros_namespace or "<none>"),
+            " namespace     : " + (cfg.ros_namespace or "<none>")
+            + "   cmd_vel timeout=" + str(cfg.cmd_vel_timeout) + "s",
             " headless      : " + str(cfg.headless) + "   physics=" + str(cfg.physics_hz)
             + "Hz  render=" + str(cfg.render_hz) + "Hz",
             " lidar profile : " + cfg.lidar_config,
