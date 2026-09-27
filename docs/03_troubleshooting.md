@@ -64,6 +64,21 @@ it is not, and `--self-test` reports `bridge enabled : False`.
 
 ---
 
+## The robot stops by itself after half a second
+
+That is the command watchdog: `/cmd_vel` went quiet for longer than
+`CMD_VEL_TIMEOUT` (default 0.5 s of simulation time). The console shows
+`[watchdog] no fresh /cmd_vel -> STOP`.
+
+A publisher must keep sending, even when the command has not changed — the
+bundled clients send 20 per second. A node that publishes once and goes quiet
+(some teleop tools only publish on a keypress) will be stopped. Make it
+stream, or raise `CMD_VEL_TIMEOUT` if you accept the longer blind distance:
+at 1 m/s, every 0.1 s of timeout is another 10 cm travelled without a fresh
+command.
+
+---
+
 ## The robot does not move, but `/cmd_vel` is being published
 
 Run `run\sim.cmd --self-test`. Phase 2 drives the robot and reports exactly

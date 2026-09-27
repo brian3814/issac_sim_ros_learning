@@ -21,12 +21,22 @@ Everything else has a working default.
 run\sim.cmd --self-test
 ```
 
-Two phases, both automatic:
+Three phases, all automatic:
 
 1. **Topic discovery** — brings up the scene and bridge headless and confirms
    all nine topics are advertised.
 2. **Closed-loop drive** — publishes `/cmd_vel`, then checks the odometry
    moved by the commanded distance and that `/scan` returns real hits.
+3. **Command watchdog** — drives, then stops publishing mid-drive *without*
+   sending a zero, and checks the robot stops within `CMD_VEL_TIMEOUT`.
+   This is what a crashed client looks like; Ctrl+C never shows it, because
+   both clients publish a zero on the way out.
+
+The watchdog logic itself has plain-Python unit tests that need no simulator:
+
+```cmd
+C:\isaacsim\python.bat -m unittest discover -s tests
+```
 
 Writes `_output/self_test_report.txt`; exits non-zero on failure. A healthy
 report ends with `RESULT : PASS`.
@@ -199,6 +209,7 @@ Everything below is in `.env` and takes effect on the next run:
 | `LOAD_FULL_WAREHOUSE` | `true` swaps the procedural room for the 128 MB photoreal building |
 | `ROS_NAMESPACE` | prefixes every topic |
 | `ROS_DOMAIN_ID` | DDS domain, used by both the simulator and the clients |
+| `CMD_VEL_TIMEOUT` | seconds of `/cmd_vel` silence before the robot is stopped (simulation time; default 0.5) |
 
 Structural changes — a different chassis, a third wheel, a second camera —
 belong in `warehouse_amr/scene/robot.py`, which is short enough to edit

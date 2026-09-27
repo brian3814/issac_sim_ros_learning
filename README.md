@@ -43,6 +43,11 @@ subscribers. There is no Python loop pumping messages.
                                    └───────────────────────────┘
 ```
 
+With `run\sim.cmd` the `/cmd_vel` half is handled by a small Python base
+controller instead, which adds the one thing the graph lacks: it stops the
+robot when commands stop arriving (`CMD_VEL_TIMEOUT`). See
+[architecture §8](docs/01_architecture.md#8-the-command-watchdog).
+
 The client on the left is an ordinary ROS 2 node. It cannot tell it is talking
 to a simulator, which is exactly the point — swap in a real AMR publishing the
 same topics and the code runs unchanged.
@@ -259,7 +264,7 @@ derived from the scene graph, so they are exact and free.
 | Topic | Type | Direction | Source in the graph |
 |---|---|---|---|
 | `/clock` | `rosgraph_msgs/Clock` | out | `ROS2PublishClock` |
-| `/cmd_vel` | `geometry_msgs/Twist` | **in** | `ROS2SubscribeTwist` |
+| `/cmd_vel` | `geometry_msgs/Twist` | **in** | `base_controller.py` (with a timeout); `ROS2SubscribeTwist` in the GUI path |
 | `/odom` | `nav_msgs/Odometry` | out | `ROS2PublishOdometry` |
 | `/tf` | `tf2_msgs/TFMessage` | out | `ROS2PublishRawTransformTree` + `ROS2PublishTransformTree` |
 | `/joint_states` | `sensor_msgs/JointState` | out | `ROS2PublishJointState` |
@@ -338,10 +343,13 @@ warehouse_amr/
   scene/robot.py           the AMR articulation
   sensors.py               RTX lidar + camera render products
   ros_graph.py             the ROS 2 bridge OmniGraph
+  base_controller.py       /cmd_vel -> wheels, with the command watchdog
+  cmd_watchdog.py          the timeout logic (pure Python, unit tested)
   sdg.py                   Replicator randomisers + writer
   gui.py                   build it all inside a running Isaac Sim editor
 scripts/                   entry points (run with Isaac Sim's python)
 ros2_client/               plain ROS 2 nodes (no Isaac Sim)
+tests/                     unit tests that need no simulator
 run/                       .cmd and .ps1 launchers
 docs/                      markdown docs + an illustrated index.html
 ```

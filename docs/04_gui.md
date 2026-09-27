@@ -142,6 +142,12 @@ actual project path, and it must run before the import.
 have `new_stage=False` over a stage that already has a ground plane or a second
 PhysicsScene. Rebuild with `new_stage=True`.
 
+**No command timeout in the GUI.** `run\sim.cmd` drives the wheels from
+`base_controller.py`, which stops the robot when `/cmd_vel` goes quiet. The
+GUI path has no Python loop to run it in, so it drives from the graph's
+`ROS2SubscribeTwist` chain, which keeps the last command: kill a client
+without it sending a zero and the robot carries on. Press ■ to stop it.
+
 **Topics vanish when you press ■.** Working as intended — see
 `docs/03_troubleshooting.md`.
 

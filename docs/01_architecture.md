@@ -165,7 +165,51 @@ joint_velocities = art.get_joint_velocities()
 Inside the graph, `IsaacComputeOdometry` reads the same source, which is why
 `/odom` and the tensor API agree while a stage read may not.
 
-## 8. Configuration and isolation
+## 8. The command watchdog
+
+Two things in the simulator remember the last command: `ROS2SubscribeTwist`
+keeps its last message, and a PhysX joint drive keeps its last target until
+something overwrites it. If the node publishing `/cmd_vel` dies without
+sending a zero, the robot drives on forever. A real AMR's base controller
+prevents this with a command timeout (ros2_control's `diff_drive_controller`
+calls it `cmd_vel_timeout`, default 0.5 s), so the simulator has one too.
+
+With `run\sim.cmd`, the graph is built with `drive_from_graph=False` and the
+wheels belong to `warehouse_amr/base_controller.py` instead:
+
+```
+/cmd_vel ──► rclpy subscriber (depth 1) ──► CmdVelWatchdog ──► v, ω ──► wheel targets ──► PhysX
+                                              │
+                          no valid message for CMD_VEL_TIMEOUT → (0, 0)
+```
+
+The rules it follows, and why:
+
+- **It sits on the receiving side.** A sender can stream at a steady rate and
+  publish a zero on exit (both clients do), but only the receiver can notice
+  that the stream has stopped.
+- **It times the last valid message received**, not changes in value — an
+  unchanged command repeated 20 times a second is still a heartbeat.
+- **Silence produces an active zero**, written every step, because nothing
+  else will overwrite the last target.
+- **It measures simulation time.** The robot only moves when the simulation
+  advances, so a slow frame is not mistaken for silence. A clock that jumps
+  backwards (Stop → Play) drops the stored command instead of reviving it.
+- **The queue is one deep.** `spin_once()` services one callback per call; a
+  deeper queue lets stale commands pile up whenever the loop runs slower
+  than the publisher.
+
+It is the only writer of wheel targets. Two writers — the graph's
+`ArticulationController` and this — would overwrite each other every frame.
+
+The GUI path (`gui.build()`) still drives from the graph, since there is no
+Python loop to run the controller in, and so has no timeout.
+
+A software timeout is a functional safeguard, not a safety function. A real
+robot adds a communication timeout in its motor drives and a certified layer
+(emergency stop, safety-rated scanners, a safety PLC) underneath.
+
+## 9. Configuration and isolation
 
 `config.py` reads `.env` and **never reads `os.environ` for configuration**.
 It writes `os.environ` — process-locally — only to point Kit at the bundled
